@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phase0-engine"
+version = "1.1.0"
+description = "국내 주식 데이트레이딩 자동매매 시스템 — Phase 0 계산 엔진 (단일 진실 공급원)"
+requires-python = ">=3.10"
+dependencies = [
+    "PyYAML>=6.0",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4",
+    "pytest-cov>=4.1",
+]
+
+[tool.setuptools.packages.find]
+include = ["phase0*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

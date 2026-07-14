@@ -1,0 +1,46 @@
+name: Phase 0 Engine CI
+
+# 기획안 STAGE 3 원칙: "엔진은 단위 테스트 통과 없이는 표를 출력하지 않는다."
+# 이 워크플로우가 그 원칙의 실제 게이트다 — main에 머지되기 전, 그리고 PR마다
+# 항등식·경계값·문서 수치 재현 테스트가 전부 통과해야 한다.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install package + dev deps
+        run: pip install -e ".[dev]"
+
+      - name: Run unit tests (항등식·경계값·문서 재현)
+        run: pytest tests/ -v --cov=phase0 --cov-report=term-missing
+
+      - name: Fail build if coverage below 85%
+        run: pytest tests/ --cov=phase0 --cov-fail-under=85
+
+      - name: costs.yaml 세법 재확인 기한 점검
+        run: |
+          python -c "
+          from phase0.config.costs import base_breakdown
+          bd = base_breakdown()
+          print(f'Base 왕복비용: {bd.base_total*100:.2f}%')
+          print(f'미확정 항목: {bd.unresolved}')
+          if bd.is_stale():
+              print(f'::warning::costs.yaml 재확인 기한({bd.next_review_due})이 지났습니다.')
+          "

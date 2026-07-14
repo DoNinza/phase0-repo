@@ -1,0 +1,71 @@
+# costs.yaml — Phase 0 비용 파라미터 (기획안 v4.0 STAGE 5.5 승계)
+#
+# 단위: 소수 (0.01 = 1%), 전부 "왕복" 기준 항목은 매수+매도 합산.
+# 태그 체계는 기획안 태그 규약을 그대로 사용한다:
+#   확인된 사실 / 설계 결정 / 초기 가정 / 검증 대상 / 외부 확인 필요 /
+#   백테스트 후 확정 / 섀도우 테스트 후 확정 / 소액 실전 후 확정
+#
+# Phase 0 Blocker(기획안 §5.6): 이 파일의 '외부 확인 필요' 항목이 전부
+# 실측값으로 대체되기 전까지는 Base 비용이 확정치가 아니라는 뜻이다.
+
+meta:
+  last_verified: "2026-07-14"
+  next_review_due: "2027-01-01"   # 매년 1월 세법 확인 — 캘린더 고정 이벤트 (기획안 §1.9)
+  market: "KOSPI"
+  effective_from: "2026-01-01"
+  source: "기획재정부 세제개편 보도, 증권사 공식 안내"
+
+# ---------- Base 구성 요소 (합산 시 0.36%) ----------
+components:
+  transaction_tax:               # 증권거래세 (코스피 매도시)
+    value: 0.0005
+    tag: "확인된 사실"
+    note: "2026-01-01 양도분부터 적용"
+
+  special_tax:                   # 농어촌특별세 (코스피 매도시)
+    value: 0.0015
+    tag: "확인된 사실"
+
+  brokerage_commission_roundtrip:
+    value: 0.0001
+    tag: "외부 확인 필요"
+    note: "계좌 요율·최저수수료 확인 전 임시값 — Phase 0 Blocker"
+
+  slippage_buy:
+    value: 0.0005
+    tag: "초기 가정"
+    note: "섀도우 테스트 후 확정"
+
+  slippage_sell_normal:
+    value: 0.0010
+    tag: "초기 가정"
+    note: "섀도우 테스트 후 확정 (정상 청산 기준, 손절 청산은 별도 항목)"
+
+# ---------- Base 합산에서 제외되는 조건부 항목 ----------
+conditional:
+  exchange_fees:
+    value: 0.0
+    tag: "외부 확인 필요"
+    note: "유관기관 제비용 요율 미확인 — 확인 전까지 0으로 두고 Base에 미반영 상태를 명시한다"
+
+  stoploss_market_extra:
+    value: 0.0010
+    tag: "초기 가정"
+    note: "손절 시장가 추가분. 표8(연속 최악일) 계산에서만 가산, Base 왕복 비용 합계에는 포함하지 않는다"
+
+# ---------- 판정용 시나리오 (기획안 §5.5) ----------
+scenarios:
+  optimistic:
+    override_total: 0.0028
+    usage: "판정 사용 금지 — 민감도 방향 참고 전용 (표4)"
+  base:
+    multiplier: 1.0
+    usage: "1차 판정 (G0~G2 기준)"
+  conservative:
+    multiplier: 1.3
+    usage: "G3 필수 통과 기준 — 손익분기 비용 ≥ Base×1.3"
+  stress:
+    multiplier: 2.0
+    usage: "우수 등급 참고"
+  realized:
+    usage: "운용 중 실측값으로 갱신 (소스: 실거래 로그, 소액 실전 후 확정)"
