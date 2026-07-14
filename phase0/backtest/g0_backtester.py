@@ -115,6 +115,40 @@ class G0Verdict:
     n_trading_days: int
 
 
+def _expectancy(trades: Sequence[TradeResult], cost_base: float) -> float:
+    if not trades:
+        return float("nan")
+    pnls = [t.pnl_pct for t in trades]
+    wins = [x for x in pnls if x > 0]
+    losses = [x for x in pnls if x <= 0]
+    p = len(wins) / len(pnls)
+    W = sum(wins) / len(wins) if wins else 0.0
+    L = -sum(losses) / len(losses) if losses else 0.0
+    return e_trade(p, W, L, cost_base)
+
+
+def _verdict_from_metrics(
+    ambiguous_ratio: float,
+    n_trades: int,
+    n_trading_days: int,
+    e_cons: float,
+    e_opt: float,
+    min_trades: int,
+    min_trading_days: int,
+    ambiguous_ratio_threshold: float,
+) -> str:
+    if ambiguous_ratio > ambiguous_ratio_threshold:
+        return "insufficient_bar_power"
+    if n_trades < min_trades or n_trading_days < min_trading_days:
+        return "insufficient_sample"
+    if e_opt <= 0:
+        return "reject"
+    if e_cons > 0:
+        return "pass"
+    # e_opt > 0 and e_cons <= 0 → 부호 갈림
+    return "hold"
+
+
 def run_g0(
     bars: dict[str, DailyBar],
     signals: Sequence[Signal],
@@ -125,7 +159,9 @@ def run_g0(
 ) -> G0Verdict:
     """두 경로를 모두 계산하고 §5.4의 4분기 판정을 내린다.
 
-    bars: {date: DailyBar} — signals[i].date로 조회.
+    bars: {date: DailyBar} — signals[i].date로 조회. 단일 종목 전용(날짜만으로
+    키가 잡혀 있어 여러 종목이 같은 날짜를 쓰면 충돌한다) — 여러 종목을
+    합쳐서 판정하려면 run_g0_multi를 쓴다.
     cost_base: phase0.config.costs.base_breakdown().base_total 등에서 주입.
     """
     cons_trades = [resolve_trade(bars[s.date], s, "conservative") for s in signals]
@@ -137,32 +173,14 @@ def run_g0(
         if n else 0.0
     )
 
-    def _e(trades: Sequence[TradeResult]) -> float:
-        if not trades:
-            return float("nan")
-        pnls = [t.pnl_pct for t in trades]
-        wins = [x for x in pnls if x > 0]
-        losses = [x for x in pnls if x <= 0]
-        p = len(wins) / len(pnls)
-        W = sum(wins) / len(wins) if wins else 0.0
-        L = -sum(losses) / len(losses) if losses else 0.0
-        return e_trade(p, W, L, cost_base)
-
-    e_cons = _e(cons_trades)
-    e_opt = _e(opt_trades)
+    e_cons = _expectancy(cons_trades, cost_base)
+    e_opt = _expectancy(opt_trades, cost_base)
     trading_days = len({s.date for s in signals})
 
-    if ambiguous_ratio > ambiguous_ratio_threshold:
-        verdict = "insufficient_bar_power"
-    elif n < min_trades or trading_days < min_trading_days:
-        verdict = "insufficient_sample"
-    elif e_opt <= 0:
-        verdict = "reject"
-    elif e_cons > 0:
-        verdict = "pass"
-    else:
-        # e_opt > 0 and e_cons <= 0 → 부호 갈림
-        verdict = "hold"
+    verdict = _verdict_from_metrics(
+        ambiguous_ratio, n, trading_days, e_cons, e_opt,
+        min_trades, min_trading_days, ambiguous_ratio_threshold,
+    )
 
     return G0Verdict(
         verdict=verdict,
@@ -170,5 +188,57 @@ def run_g0(
         e_conservative=e_cons,
         e_optimistic=e_opt,
         n_trades=n,
+        n_trading_days=trading_days,
+    )
+
+
+def run_g0_multi(
+    bars_by_ticker: dict[str, dict[str, DailyBar]],
+    signals_by_ticker: dict[str, Sequence[Signal]],
+    cost_base: float,
+    min_trades: int = 1000,
+    min_trading_days: int = 500,
+    ambiguous_ratio_threshold: float = 0.40,
+) -> G0Verdict:
+    """여러 종목의 신호를 하나의 G0 판정으로 통합.
+
+    run_g0()의 bars는 날짜만으로 키가 잡혀 있어 종목이 여러 개면 같은 날짜가
+    충돌한다 — 종목별로 resolve_trade를 돌린 뒤 전체 거래를 합쳐 동일한
+    4분기 판정을 적용한다. n_trading_days는 전체 종목을 통틀어 신호가 발생한
+    서로 다른 날짜 수(거래일 규모의 대용)이지, 종목별 합산이 아니다.
+    """
+    all_cons: list[TradeResult] = []
+    all_opt: list[TradeResult] = []
+    ambiguous_count = 0
+    total_signals = 0
+    all_dates: set[str] = set()
+
+    for ticker, signals in signals_by_ticker.items():
+        bars = bars_by_ticker[ticker]
+        for s in signals:
+            bar = bars[s.date]
+            total_signals += 1
+            all_dates.add(s.date)
+            if classify_bar(bar, s) == BarResolution.AMBIGUOUS:
+                ambiguous_count += 1
+            all_cons.append(resolve_trade(bar, s, "conservative"))
+            all_opt.append(resolve_trade(bar, s, "optimistic"))
+
+    ambiguous_ratio = ambiguous_count / total_signals if total_signals else 0.0
+    e_cons = _expectancy(all_cons, cost_base)
+    e_opt = _expectancy(all_opt, cost_base)
+    trading_days = len(all_dates)
+
+    verdict = _verdict_from_metrics(
+        ambiguous_ratio, total_signals, trading_days, e_cons, e_opt,
+        min_trades, min_trading_days, ambiguous_ratio_threshold,
+    )
+
+    return G0Verdict(
+        verdict=verdict,
+        ambiguous_ratio=ambiguous_ratio,
+        e_conservative=e_cons,
+        e_optimistic=e_opt,
+        n_trades=total_signals,
         n_trading_days=trading_days,
     )

@@ -30,22 +30,40 @@ def test_clean_ohlcv_drops_zero_volume_holiday_rows():
     assert bars[0].date == "20260701"
 
 
-def test_clean_ohlcv_rejects_high_below_low():
-    raw = _make_raw([("20260701", 100, 90, 95, 92, 1000)])  # 고가(90) < 저가(95)
-    with pytest.raises(ValueError, match="고가"):
-        clean_ohlcv(raw)
+def test_clean_ohlcv_skips_high_below_low_with_warning():
+    # 실측(2026-07-15): 10년 배치에서 액면분할 조정 반올림으로 하루치가
+    # 이런 위반을 냈다. 그 하루만 빼고 나머지 이력은 살려야 한다 — 예외로
+    # 종목 전체를 버리면 삼성전자 같은 핵심 종목이 통째로 빠진다.
+    raw = _make_raw([
+        ("20260701", 100, 110, 95, 105, 1000),
+        ("20260702", 100, 90, 95, 92, 1000),   # 고가(90) < 저가(95)
+    ])
+    with pytest.warns(UserWarning, match="고가"):
+        bars = clean_ohlcv(raw)
+    assert len(bars) == 1
+    assert bars[0].date == "20260701"
 
 
-def test_clean_ohlcv_rejects_close_outside_range():
-    raw = _make_raw([("20260701", 100, 110, 95, 120, 1000)])  # 종가(120) > 고가(110)
-    with pytest.raises(ValueError, match="종가"):
-        clean_ohlcv(raw)
+def test_clean_ohlcv_skips_close_outside_range_with_warning():
+    raw = _make_raw([
+        ("20260701", 100, 110, 95, 105, 1000),
+        ("20260702", 100, 110, 95, 120, 1000),   # 종가(120) > 고가(110)
+    ])
+    with pytest.warns(UserWarning, match="종가"):
+        bars = clean_ohlcv(raw)
+    assert len(bars) == 1
+    assert bars[0].date == "20260701"
 
 
-def test_clean_ohlcv_rejects_open_outside_range():
-    raw = _make_raw([("20260701", 80, 110, 95, 105, 1000)])  # 시가(80) < 저가(95)
-    with pytest.raises(ValueError, match="시가"):
-        clean_ohlcv(raw)
+def test_clean_ohlcv_skips_open_outside_range_with_warning():
+    raw = _make_raw([
+        ("20260701", 100, 110, 95, 105, 1000),
+        ("20260702", 80, 110, 95, 105, 1000),    # 시가(80) < 저가(95)
+    ])
+    with pytest.warns(UserWarning, match="시가"):
+        bars = clean_ohlcv(raw)
+    assert len(bars) == 1
+    assert bars[0].date == "20260701"
 
 
 def test_fetch_ohlcv_uses_injected_fetcher_not_real_network():

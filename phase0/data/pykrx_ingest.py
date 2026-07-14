@@ -17,6 +17,7 @@ DailyBar/Signal 주입)과 동일한 패턴이다.
 
 from __future__ import annotations
 
+import warnings
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
@@ -54,8 +55,11 @@ def clean_ohlcv(raw: pd.DataFrame) -> list[OhlcvBar]:
     - 거래량 0인 행(휴장일이 날짜 인덱스에 섞여 들어온 경우) 제외 — 무거래일은
       phase0.engine.core.exposure()의 0 기여로 이미 반영되므로 여기서 중복 처리 안 함.
     - 고가<저가, 시가/종가가 [저가,고가] 범위를 벗어나는 등 정합성 위반 행은
-      조용히 넘기지 않고 ValueError로 기각 — 잘못된 봉으로 G0 판정이 오염되는
-      것을 데이터 입구에서 막는다.
+      해당 일자만 건너뛰고 UserWarning으로 알린다. 실측(2026-07-15) 결과 이런
+      위반은 대개 액면분할·유상증자 조정 과정의 반올림 오차로 하루이틀만
+      튀는 형태였다 — 예외를 던져 종목 전체 수년치 이력을 버리면 그 하루
+      때문에 삼성전자 같은 핵심 종목이 통째로 배치에서 빠지는 불균형이
+      생긴다(2026-07-15 10년 백테스트에서 실제로 4/20 종목이 이렇게 빠짐).
     """
     bars: list[OhlcvBar] = []
     for idx, row in raw.iterrows():
@@ -65,11 +69,14 @@ def clean_ohlcv(raw: pd.DataFrame) -> list[OhlcvBar]:
         o, h, l, c = float(row["시가"]), float(row["고가"]), float(row["저가"]), float(row["종가"])
         date = idx.strftime("%Y%m%d") if hasattr(idx, "strftime") else str(idx)
         if h < l:
-            raise ValueError(f"{date}: 고가({h}) < 저가({l}) — 데이터 정합성 위반")
+            warnings.warn(f"{date}: 고가({h}) < 저가({l}) — 데이터 정합성 위반, 해당 일자 제외")
+            continue
         if not (l <= o <= h):
-            raise ValueError(f"{date}: 시가({o})가 저가~고가 범위[{l},{h}]를 벗어남")
+            warnings.warn(f"{date}: 시가({o})가 저가~고가 범위[{l},{h}]를 벗어남, 해당 일자 제외")
+            continue
         if not (l <= c <= h):
-            raise ValueError(f"{date}: 종가({c})가 저가~고가 범위[{l},{h}]를 벗어남")
+            warnings.warn(f"{date}: 종가({c})가 저가~고가 범위[{l},{h}]를 벗어남, 해당 일자 제외")
+            continue
         bars.append(OhlcvBar(date=date, open=o, high=h, low=l, close=c, volume=volume))
     return bars
 
