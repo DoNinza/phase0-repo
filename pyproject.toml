@@ -10,12 +10,16 @@ requires-python = ">=3.10"
 dependencies = [
     "PyYAML>=6.0",
     "numpy>=1.24",
+    "pandas>=2.2",   # phase0.data.pykrx_ingest 클렌징 로직 — 테스트도 이 타입을 다룸
 ]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.4",
     "pytest-cov>=4.1",
+]
+data = [
+    "pykrx>=1.2",    # 실제 KRX 네트워크 호출 전용 — pykrx_ingest의 기본 fetcher에서만 사용
 ]
 
 [tool.setuptools.packages.find]
