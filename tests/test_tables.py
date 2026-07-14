@@ -17,20 +17,18 @@ def test_t_r01_verify_contains_expected_values():
 def test_t_breakeven_uses_injected_cost():
     bd = base_breakdown()
     out = tables.t_breakeven(bd.base_total)
-    # W=1.5%, L=0.8% 조합의 문서상 값 50.4%
-    assert "50.4%" in out
+    # W=1.5%, L=0.8% 조합 — 2026-07-14 실측 비용(C=0.3854%) 반영 후 51.5%
+    # (문서 원본의 50.4%는 C=0.36% 플레이스홀더 기준값)
+    assert "51.5%" in out
 
 
 def test_t_cost_sens_matches_document_row_for_base_2026():
     scenarios = scenario_costs()
     out = tables.t_cost_sens(scenarios)
-    assert "+0.060%" in out  # Base 2026 행
-    # 주의: 원본 phase0_engine.py는 Conservative 비용을 0.47%로 하드코딩했는데,
-    # 이는 Base(0.36%)×1.3=0.468%를 소수점 둘째자리에서 반올림한 값이다(0.468→0.47%).
-    # 반올림된 "표시용" 값을 다시 계산 입력으로 쓰면 -0.050%가 나오지만, 반올림 없이
-    # 1.3배를 그대로 계산하면 -0.048%가 나온다 — 원본의 미세한 반올림 누적 오차
-    # (<0.002%p)이며, 이 리팩터는 정밀값(-0.048%)을 쓴다. (README 기록)
-    assert "-0.048%" in out  # Conservative 행 (정밀 계산값, 원본 표기 -0.050%와 미세 차이)
+    # 2026-07-14: 위탁수수료·유관기관제비용 실측 반영 후 Base=0.3854%,
+    # E_trade(p=55%,W=1.5%,L=0.9%)는 문서 원본의 +0.060%에서 +0.035%로 하향.
+    assert "+0.035%" in out  # Base 2026 행
+    assert "-0.081%" in out  # Conservative(1.3x) 행 — 원본 -0.048%에서 하향
 
 
 def test_t_annual_matches_document_64pct_row():
@@ -41,7 +39,8 @@ def test_t_annual_matches_document_64pct_row():
 def test_t_target_matches_document():
     bd = base_breakdown()
     out = tables.t_target(bd.base_total)
-    assert "4.60%" in out  # 일1%, 노출0.625, p=60%
+    # 2026-07-14 실측 비용(C=0.3854%) 반영 후 4.64% (문서 원본은 C=0.36% 기준 4.60%)
+    assert "4.64%" in out  # 일1%, 노출0.625, p=60%
 
 
 def test_t_wf_matches_document_3_segments():

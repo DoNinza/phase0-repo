@@ -37,17 +37,22 @@ python scripts/print_tables.py         # 문서 STAGE 3 표1~8 재출력
   기획안이 R-12에서 지적한 "표시값을 다시 계산에 흘려 넣는" 패턴의 축소판이라
   일부러 남겨두고 테스트로 고정했다(`tests/test_tables.py`).
 
-## 아직 채워야 할 값 — Phase 0 Blocker (§5.6)
+## Phase 0 Blocker 해소 (§5.6) — 2026-07-14
 
-`costs.yaml`에서 `외부 확인 필요` 태그가 붙은 항목이 실측되기 전까지 Base
-비용은 잠정치다. CI가 매번 아래를 자동 리포트한다(`unresolved_report`):
+`costs.yaml`의 `외부 확인 필요` 항목 2건이 모두 실측값으로 대체되어 Blocker가
+해소됐다. Base 왕복비용은 **0.36%(문서 원본 가정치) → 0.3854%(실측)** 로 갱신:
 
-- `brokerage_commission_roundtrip` — 계좌 수수료율·최저수수료 확인 필요
-- `exchange_fees` — 유관기관 제비용 요율 확인 필요 (현재 0으로 두고 Base 미반영 상태 명시)
+- `brokerage_commission_roundtrip` — 사용자 실계좌(한국투자증권 뱅키스 온라인매매)
+  확인 결과 0.0140527%(편도, KRX). 왕복 2배 적용 = 0.0281054%. 기존 0.01%
+  임시값 대비 약 2.8배 상향.
+- `exchange_fees` — KIS 공식 수수료안내 페이지 기준 유관기관제비용율
+  0.00363960%(편도, 2025-10-27 고시). 왕복 추정 0.0073%로 Base에 반영.
 
-이 값들이 실측되면 `costs.yaml`의 `value`만 갱신하면 되고, 코드 변경도
-`t_r01_verify`처럼 하드코딩된 예시(원표 조건 C=0.3% 고정)를 제외한 모든 표가
-자동으로 갱신된다.
+이 갱신에 따라 `t_r01_verify`처럼 하드코딩된 예시(원표 조건 C=0.3% 고정)를
+제외한 모든 표·테스트가 새 Base(0.3854%) 기준으로 자동 재계산되며,
+`tests/test_costs.py`·`tests/test_tables.py`의 관련 assertion도 이 커밋에서
+함께 갱신했다. 앞으로 비용이 또 바뀌면 `costs.yaml`의 `value`만 고치고
+`pytest`를 돌려 실패하는 assertion만 새 값으로 맞추면 된다.
 
 ## 아직 코드가 아닌 것 (STAGE 7 B·C그룹 — 사용자 조치 필요)
 
