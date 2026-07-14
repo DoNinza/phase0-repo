@@ -1,9 +1,16 @@
 import pytest
 
 from phase0.data.candidate_batch import (
-    TickerSummary, summarize_bars, run_batch, liquid_candidates,
+    DEFAULT_CANDIDATES, EXPANDED_CANDIDATES, TickerSummary, summarize_bars, run_batch,
+    liquid_candidates,
 )
 from phase0.data.pykrx_ingest import OhlcvBar
+
+
+def test_expanded_candidates_are_unique_six_digit_codes_and_include_default():
+    assert len(EXPANDED_CANDIDATES) == len(set(EXPANDED_CANDIDATES))
+    assert all(len(t) == 6 and t.isdigit() for t in EXPANDED_CANDIDATES)
+    assert set(DEFAULT_CANDIDATES).issubset(set(EXPANDED_CANDIDATES))
 
 
 def _bar(date, close, volume):
