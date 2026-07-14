@@ -44,9 +44,16 @@ components:
 # ---------- Base 합산에서 제외되는 조건부 항목 ----------
 conditional:
   exchange_fees:
-    value: 0.0
+    value: 0.000073
     tag: "외부 확인 필요"
-    note: "유관기관 제비용 요율 미확인 — 확인 전까지 0으로 두고 Base에 미반영 상태를 명시한다"
+    note: >-
+      2026-07-14 조사: 한국투자증권 공식 수수료안내 페이지(securities.koreainvestment.com)
+      기준 유관기관제비용율 0.00363960%(편도, 2025-10-27 현재 고시). 왕복(매수+매도)
+      가정으로 2배 적용 = 0.0073%. 계좌 등급과 무관한 KRX/예탁결제원 공통 요율이라
+      실측 신뢰도는 높으나, (a) 편도/왕복 적용 관례를 당사에 재확인하지 않았고
+      (b) brokerage_commission_roundtrip(위탁수수료)이 아직 미확정이라 두 항목을
+      한 번에 Base에 반영하기 위해 여기서는 conditional로 유지한다 — Base 합산은
+      위탁수수료 확정 후 일괄 갱신"
 
   stoploss_market_extra:
     value: 0.0010
