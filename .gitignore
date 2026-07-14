@@ -3,3 +3,8 @@ __pycache__/
 .pytest_cache/
 .coverage
 *.egg-info/
+
+# KIS API 인증정보 — 절대 커밋하지 않는다 (계좌 비밀번호급 민감정보)
+.env
+.env.*
+!.env.example
