@@ -55,9 +55,11 @@ class KisCredentials:
 
     def __repr__(self) -> str:
         # 실수로 로그에 찍히더라도 실제 값이 새지 않도록 마스킹.
+        # account_no도 계좌 식별정보라 앞 2자리만 남기고 가린다.
+        masked_account = self.account_no[:2] + "*" * (len(self.account_no) - 2)
         return (
             f"KisCredentials(app_key='***{self.app_key[-4:]}', app_secret='***', "
-            f"account_no='{self.account_no}', env='{self.env}')"
+            f"account_no='{masked_account}', env='{self.env}')"
         )
 
 

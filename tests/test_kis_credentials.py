@@ -1,11 +1,15 @@
 import pytest
 
+import phase0.config.kis_credentials as kis_credentials
 from phase0.config.kis_credentials import CredentialsMissingError, KisCredentials, load_credentials
 
 
 def test_load_credentials_raises_clear_error_when_missing(monkeypatch):
     for key in ("KIS_APP_KEY", "KIS_APP_SECRET", "KIS_ACCOUNT_NO", "KIS_ACCOUNT_PRODUCT_CD", "KIS_ENV"):
         monkeypatch.delenv(key, raising=False)
+    # 개발 머신의 실제 .env가 존재하더라도(있어야 정상) 이 테스트는 "env var가
+    # 전혀 없을 때"의 에러 경로만 검증해야 하므로 dotenv 자동 로드를 끈다.
+    monkeypatch.setattr(kis_credentials, "_load_dotenv_if_present", lambda *a, **k: None)
     with pytest.raises(CredentialsMissingError):
         load_credentials()
 
@@ -32,6 +36,7 @@ def test_credentials_repr_never_exposes_secret(monkeypatch):
 
     creds = load_credentials()
     assert "super-secret-value" not in repr(creds)
+    assert "12345678" not in repr(creds)  # account_no도 마스킹 대상
     assert creds.base_url == "https://openapi.koreainvestment.com:9443"
 
 
