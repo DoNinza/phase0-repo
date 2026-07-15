@@ -18,7 +18,8 @@ phase0.data.minute_bar_store(MinuteBar/append_bars/store_path)를 KIS
 Kiwoom REST API의 초당 호출 한도는 공식 확인이 안 돼 있어 보수적으로
 0.3초 간격을 둔다.
 
-사용법: python scripts/collect_minute_bars_kiwoom.py [--tickers T1,T2,...] [--max-calls N]
+사용법: python scripts/collect_minute_bars_kiwoom.py [--universe default|expanded]
+                                                       [--tickers T1,T2,...] [--max-calls N]
 """
 
 from __future__ import annotations
@@ -31,8 +32,10 @@ from pathlib import Path
 import requests
 
 from phase0.config.kiwoom_credentials import CredentialsMissingError, load_credentials
-from phase0.data.candidate_batch import DEFAULT_CANDIDATES
+from phase0.data.candidate_batch import DEFAULT_CANDIDATES, EXPANDED_CANDIDATES
 from phase0.data.minute_bar_store import MinuteBar, append_bars, store_path
+
+UNIVERSES = {"default": DEFAULT_CANDIDATES, "expanded": EXPANDED_CANDIDATES}
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STORE_DIR = REPO_ROOT / "data" / "minute_bars_kiwoom"
@@ -111,13 +114,19 @@ def fetch_ticker_bars(creds, token: str, ticker: str, max_calls: int) -> list[Mi
 
 def main() -> None:
     args = sys.argv[1:]
-    tickers = DEFAULT_CANDIDATES
+    universe = "default"
+    tickers = None
     max_calls = MAX_CALLS_PER_TICKER
     for i, a in enumerate(args):
         if a == "--tickers":
             tickers = args[i + 1].split(",")
+        if a == "--universe":
+            universe = args[i + 1]
         if a == "--max-calls":
             max_calls = int(args[i + 1])
+
+    if tickers is None:
+        tickers = UNIVERSES[universe]
 
     try:
         creds = load_credentials()
