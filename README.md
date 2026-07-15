@@ -23,6 +23,7 @@
 | `phase0/engine/position_sizing.py` | AlgoLab 리서치 반영 | 리스크 기반 포지션 사이징(1~2% 룰) |
 | `phase0/risk/circuit_breaker.py` | AlgoLab 리서치 반영 | 손실 대응 서킷브레이커(사전 커밋 정책) |
 | `phase0/ml/gdr_filter.py` | 2026-07-15, ML 스마트 필터 | GDR 신호 특징 추출 (로지스틱 회귀 입력) |
+| `phase0/paper/trade_log.py` | 2026-07-15, 페이퍼 트레이딩 | 실주문 없이 신호·가상 체결 기록(JSONL) |
 | `tests/` | STAGE 3 "단위 테스트 통과 없이는 표 출력 금지" | 항등식 5·경계값 3 + 문서 수치 재현 72건 |
 | `.github/workflows/ci.yml` | 위 원칙의 CI 게이트 | 매 push/PR마다 자동 실행 |
 
@@ -30,7 +31,7 @@
 
 ```bash
 pip install -e ".[dev,data]"
-pytest tests/ -v --cov=phase0                       # 전체 테스트 (119건, 네트워크 불필요)
+pytest tests/ -v --cov=phase0                       # 전체 테스트 (130건, 네트워크 불필요)
 python scripts/print_tables.py                       # 문서 STAGE 3 표1~8 재출력
 python scripts/ingest_real_sample.py 005930 20260701 20260714  # 실제 KRX 데이터 수집 확인
 python scripts/run_candidate_batch.py 20260601 20260714         # 후보 종목 배치 수집(기본 5종목)
@@ -494,6 +495,42 @@ GDR-V의 "용량-반응 패턴"과 VBP의 "양수 칸" 두 건이 정확히 이 
 방어 규율과 부합한다. 데이터마이닝 방지 원칙이 그동안 개별 실험
 안에서는 잘 지켜졌지만, 이번 점검으로 그 원칙을 프로젝트 전체 수준
 으로도 적용해야 한다는 게 분명해졌다.
+
+## GDR 페이퍼 트레이딩 인프라 (`scripts/paper_trade_gdr.py`) — 2026-07-15
+
+메타 감사에서 확인된 갭(진짜 홀드아웃 부재)을 메우는 첫 단계 — 이 10년치
+데이터셋에 여섯 번째 가설을 또 물어보는 대신, **앞으로 실제로 쌓일 새
+데이터를 진짜 한 번도 안 본 홀드아웃으로 축적**하기 시작한다. VPS 24시간
+운영·텔레그램 감시 블로그 리서치를 반영해 인프라 골격을 만들었다(텔레그램
+연동은 사용자가 아직 봇 토큰이 없어 이번엔 보류 — 로컬 로그·하트비트만
+우선 구현).
+
+**동작 방식**: 실주문은 절대 내지 않는다 — KIS 시세 조회(읽기 전용)만
+쓴다. 장중 지속 폴링 없이 하루 두 번 실행으로 당일청산을 재현한다
+(`g0_backtester.classify_bar`와 동일한 방식으로 장 마감 후 고가/저가/
+종가만으로 resolve):
+
+- `--mode entry` (평일 09:06 KST 자동 실행): 오늘 시가로 GDR 신호 생성
+  (f_fill=1.0, k_stop=1.0 — 95종목 격자 챔피언 그대로 승계) → 서킷브레이커
+  체크(`circuit_breaker.check_halt`) → 통과 시 `position_sizing.size_by_risk`
+  로 포지션 크기 계산 → 로그에 미결 항목 기록.
+- `--mode resolve` (평일 15:37 KST 자동 실행): 오늘 실제 고가/저가/종가로
+  미결 항목을 해소, 승/패·pnl% 기록.
+
+`phase0/paper/trade_log.py`: JSONL append-only 로그 + daily/weekly/
+monthly_return·consecutive_losses 계산(서킷브레이커 입력용). **정직한
+단순화**: 이 수익률들은 자본 복리·동시보유를 반영한 진짜 계좌 수익률이
+아니라 해당 기간 청산 거래의 pnl% 단순평균이다 — 진짜 계좌 지표(CAGR/
+MDD)가 필요하면 여전히 포지션 사이징이 반영된 실제 자본 곡선 모델이
+따로 필요하다.
+
+**로컬 스모크테스트(2026-07-15 19시경, 장 마감 후)**: 인증·시세조회·
+하트비트 전부 정상 동작 확인(신호는 0건 — 장외 시간이라 당연). 로그는
+`data/paper_trading/`에 쌓이며 개인 실행 기록이라 `.gitignore` 처리했다.
+
+**주의**: 자동 실행 예약은 이 세션에 한정된 cron이라 세션이 끝나거나
+7일이 지나면 만료된다 — 진짜 영속적인 24시간 운영을 원하면 VPS 배포
+(리서치한 systemd `Restart=always` 패턴)가 다음 단계로 필요하다.
 
 ## 남은 것 (STAGE 7 B·C그룹 — 계좌·API 접근 필요)
 
