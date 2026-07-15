@@ -378,6 +378,7 @@
     white-space: nowrap;
   }
   table.history tbody tr:hover { background: var(--surface-2); }
+  table.history tbody tr.wl-quote-row { cursor: pointer; }
   .res-pill {
     display: inline-block;
     padding: 2px 8px;
@@ -479,6 +480,19 @@
   </div>
 
   <div class="tab-panel" data-tab="chart">
+    <section class="panel" id="watchlistQuotesPanel">
+      <h2>워치리스트 시세 (전일 종가 기준)</h2>
+      <p class="panel-sub">전일 종가 스냅샷 — 매일 1회 수집, 실시간 아님 · 행을 클릭하면 아래 차트가 해당 종목으로 전환됩니다</p>
+      <div class="table-scroll">
+        <table class="history">
+          <thead>
+            <tr><th>종목</th><th>코드</th><th>종가</th><th>전일대비</th><th>거래량</th></tr>
+          </thead>
+          <tbody id="watchlistQuotesBody"></tbody>
+        </table>
+      </div>
+    </section>
+
     <section class="panel">
       <h2>종목별 차트</h2>
       <p class="panel-sub">보유종목+워치리스트(KR 기본 20·ETF 기본 15) 대상 검색 · 분봉은 보유종목만 대시보드 생성 시 키움 API로 즉석조회</p>
@@ -953,7 +967,10 @@
   })();
 
   // ---- stock chart (분봉/일봉/주봉/월봉) ----
-  (function () {
+  // 이 IIFE는 { selectTicker(code) }를 반환한다 — 검색창(change 이벤트)과
+  // 아래 "워치리스트 시세" 표의 행 클릭이 종목 선택 로직을 각자 복제하지
+  // 않고 이 한 곳(selectTicker)만 호출하도록 하기 위함(단일 진실 공급원).
+  const stockChart = (function () {
     const catalog = DATA.chart_catalog || {};
     const tickers = Object.keys(catalog);
     const wrap = document.getElementById("stockChartWrap");
@@ -967,7 +984,7 @@
       wrap.innerHTML = `<div class="chart-empty">아직 캐시된 종목 차트 데이터가 없습니다 — 워치리스트 일봉 수집이 하루에 한 번 돕니다.</div>`;
       searchInput.disabled = true;
       tfToggle.style.display = "none";
-      return;
+      return { selectTicker: () => {} };
     }
 
     tickerList.innerHTML = tickers.map(t => `<option value="${t} ${catalog[t].name}"></option>`).join("");
@@ -1093,13 +1110,16 @@
       info.innerHTML = `<span class="mono">${currentTicker} ${entry.name} · ${TF_LABEL[currentTf]} · ${displayBars.length}봉</span>`;
     }
 
+    function selectTicker(code) {
+      if (!catalog[code]) return;
+      currentTicker = code;
+      searchInput.value = `${code} ${catalog[code].name}`;
+      renderChart();
+    }
+
     searchInput.addEventListener("change", () => {
       const resolved = resolveTicker(searchInput.value);
-      if (resolved) {
-        currentTicker = resolved;
-        searchInput.value = `${resolved} ${catalog[resolved].name}`;
-        renderChart();
-      }
+      if (resolved) selectTicker(resolved);
     });
     tfToggle.querySelectorAll("button").forEach(btn => {
       btn.addEventListener("click", () => {
@@ -1110,6 +1130,52 @@
     });
 
     renderChart();
+    return { selectTicker };
+  })();
+
+  // ---- 워치리스트 시세 스냅샷 표 (B2) ----
+  // 새 페이로드 키를 추가하지 않는다 — chart_catalog[ticker].daily의 마지막
+  // 두 봉만으로 종가/전일대비/거래량을 클라이언트에서 계산한다(zero payload
+  // cost가 이 기능의 핵심 요건).
+  (function () {
+    const catalog = DATA.chart_catalog || {};
+    const tickers = Object.keys(catalog);
+    const panel = document.getElementById("watchlistQuotesPanel");
+    const body = document.getElementById("watchlistQuotesBody");
+    if (!tickers.length) {
+      // 종목차트 IIFE가 이미 "차트 데이터 없음" 안내를 보여준다 —
+      // 이 표는 그 상태와 모순되지 않게 아예 숨긴다.
+      if (panel) panel.style.display = "none";
+      return;
+    }
+
+    const rows = tickers.map(ticker => {
+      const daily = catalog[ticker].daily || [];
+      if (daily.length < 2) return null;   // 비교할 전일 봉이 없으면 행 생략
+      const last = daily[daily.length - 1];
+      const prev = daily[daily.length - 2];
+      const change = last.c - prev.c;
+      const changePct = prev.c ? (change / prev.c) * 100 : 0;
+      return { ticker, name: catalog[ticker].name, close: last.c, change, changePct, volume: last.v };
+    }).filter(Boolean);
+
+    // 절대 변동폭(%) 큰 순 — 참고 스크린샷 스타일, 워치리스트 순서(코드순)도
+    // 합리적이지만 "시세 스냅샷"은 움직임이 큰 종목이 먼저 보이는 편이 유용하다.
+    rows.sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct));
+
+    body.innerHTML = rows.map(r => `
+      <tr class="wl-quote-row" data-ticker="${r.ticker}">
+        <td>${r.name}</td>
+        <td class="mono">${r.ticker}</td>
+        <td class="mono">${fmtPrice(r.close)}</td>
+        <td class="mono ${signClass(r.change)}">${fmtPrice(r.change)}원 (${fmtPct(r.changePct)})</td>
+        <td class="mono">${Math.round(r.volume).toLocaleString()}</td>
+      </tr>
+    `).join("");
+
+    body.querySelectorAll(".wl-quote-row").forEach(row => {
+      row.addEventListener("click", () => stockChart.selectTicker(row.dataset.ticker));
+    });
   })();
 
   // KPI row 제거됨(2026-07-16) — "전략 현황" 탭의 GDR-KR 카드가 누적손익/
