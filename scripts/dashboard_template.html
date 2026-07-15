@@ -251,6 +251,61 @@
   .holding-bar-fill.loss { background: var(--loss); }
   .holding-bar-sub { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
   .holding-pnl { text-align: right; font-weight: 700; font-size: 13.5px; }
+  .holding-weight { font-size: 11px; color: var(--text-muted); }
+
+  /* ---------- strategy board ---------- */
+  .strategy-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  @media (max-width: 720px) { .strategy-grid { grid-template-columns: 1fr; } }
+  .strategy-card {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px;
+    padding: 14px 16px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .strategy-card-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .strategy-card-label { font-weight: 700; font-size: 14px; letter-spacing: 0.03em; }
+  .strategy-card-config { font-size: 11px; color: var(--text-muted); }
+  .strategy-stat-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .strategy-stat { display: flex; flex-direction: column; gap: 2px; }
+  .strategy-stat-label { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+  .strategy-stat-value { font-size: 15px; font-weight: 700; }
+  .strategy-meter-row { display: flex; flex-direction: column; gap: 3px; }
+  .strategy-meter-label { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--text-muted); }
+  .strategy-meter-track { height: 5px; border-radius: 3px; background: var(--surface); overflow: hidden; }
+  .strategy-meter-fill { height: 100%; border-radius: 3px; background: var(--status-warn); }
+  .strategy-meter-fill.danger { background: var(--gain); }
+
+  /* ---------- risk metrics ---------- */
+  .risk-tile-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  @media (max-width: 720px) { .risk-tile-row { grid-template-columns: repeat(2, 1fr); } }
+  .risk-tile-note { margin-top: 10px; font-size: 11.5px; color: var(--text-muted); line-height: 1.6; }
+
+  /* ---------- pnl calendar ---------- */
+  .calendar-toolbar { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-bottom: 14px; }
+  .calendar-nav { display: flex; align-items: center; gap: 8px; }
+  .cal-nav-btn, .cal-today-btn {
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary);
+    font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 4px; cursor: pointer;
+  }
+  .cal-today-btn { color: var(--accent); border-color: var(--accent); }
+  .cal-month-label { font-size: 13.5px; font-weight: 700; min-width: 90px; text-align: center; }
+  .calendar-summary-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 14px; }
+  @media (max-width: 720px) { .calendar-summary-row { grid-template-columns: repeat(2, 1fr); } }
+  .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+  .calendar-weekday { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); text-align: center; padding-bottom: 4px; }
+  .calendar-day {
+    aspect-ratio: 1 / 0.8; border-radius: 4px; border: 1px solid var(--border);
+    background: var(--surface-2); padding: 6px 8px; display: flex; flex-direction: column;
+    justify-content: space-between; cursor: default; font-size: 11px;
+  }
+  .calendar-day.has-trades { cursor: pointer; }
+  .calendar-day.gain { background: var(--gain-soft); border-color: color-mix(in srgb, var(--gain) 40%, transparent); }
+  .calendar-day.loss { background: var(--loss-soft); border-color: color-mix(in srgb, var(--loss) 40%, transparent); }
+  .calendar-day.other-month { opacity: 0.35; }
+  .calendar-day.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .calendar-day-num { font-weight: 700; color: var(--text-secondary); }
+  .calendar-day-pnl { font-weight: 700; }
+  .calendar-day-pnl.gain { color: var(--gain); }
+  .calendar-day-pnl.loss { color: var(--loss); }
+  .calendar-day-count { font-size: 10px; color: var(--text-muted); }
 
   /* ---------- stock chart ---------- */
   .stock-chart-toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
@@ -358,6 +413,47 @@
   </section>
 
   <section class="panel">
+    <h2>전략 현황</h2>
+    <p class="panel-sub">전략별 페이퍼 트레이딩 요약 — 사전등록 파라미터 그대로 표시(결과 보고 재선택 안 함)</p>
+    <div id="strategyBoardWrap"></div>
+  </section>
+
+  <section class="panel">
+    <h2>위험지표</h2>
+    <p class="panel-sub">GDR-KR+GDR-ETF 통합, 해소 거래 기준 — 표본 부족 시 확정값 대신 "표본부족"으로 표시</p>
+    <div id="riskMetricsWrap"></div>
+  </section>
+
+  <section class="panel">
+    <h2>손익달력</h2>
+    <p class="panel-sub">GDR-KR·GDR-ETF 해소 거래 통합 — 하루 단위 pnl% 단순평균 기준(자본 복리·동시보유 미반영)</p>
+    <div class="calendar-toolbar">
+      <div class="tf-toggle" id="calendarFilterToggle">
+        <button type="button" data-filter="all" class="active">전체</button>
+        <button type="button" data-filter="kr">KR</button>
+        <button type="button" data-filter="etf">ETF</button>
+      </div>
+      <div class="calendar-nav">
+        <button type="button" id="calPrevMonth" class="cal-nav-btn">◀</button>
+        <span id="calMonthLabel" class="mono cal-month-label">—</span>
+        <button type="button" id="calNextMonth" class="cal-nav-btn">▶</button>
+        <button type="button" id="calTodayBtn" class="cal-today-btn">오늘</button>
+      </div>
+    </div>
+    <div class="calendar-summary-row" id="calendarSummaryRow"></div>
+    <div class="calendar-grid" id="calendarGrid"></div>
+    <p class="panel-sub" id="calendarDaySub" style="margin-top:14px;">날짜를 선택하면 그날의 거래가 아래 표시됩니다.</p>
+    <div class="table-scroll">
+      <table class="history">
+        <thead>
+          <tr><th>전략</th><th>종목</th><th>진입가</th><th>목표가</th><th>손절가</th><th>결과</th><th>손익</th></tr>
+        </thead>
+        <tbody id="calendarDayTradesBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel">
     <h2>종목별 차트</h2>
     <p class="panel-sub">보유종목+워치리스트(KR 기본 20·ETF 기본 15) 대상 검색 · 분봉은 보유종목만 대시보드 생성 시 키움 API로 즉석조회</p>
     <div class="stock-chart-toolbar">
@@ -377,13 +473,13 @@
   <section class="kpi-row" id="kpiRow"></section>
 
   <section class="panel">
-    <h2>누적 손익 추이</h2>
+    <h2>누적 손익 추이 (GDR-KR)</h2>
     <p class="panel-sub">해소된 거래의 pnl% 단순누적(단리) — 자본 복리·동시보유를 반영한 진짜 계좌 곡선은 아님</p>
     <div class="chart-svg-wrap" id="chartWrap"></div>
   </section>
 
   <section class="panel">
-    <h2>오늘의 포지션</h2>
+    <h2>오늘의 포지션 (GDR-KR)</h2>
     <p class="panel-sub" id="positionsSub">장 시작 직후 진입 기록 → 장 마감 후 해소</p>
     <div id="positionsWrap"></div>
   </section>
@@ -395,8 +491,8 @@
   </section>
 
   <section class="panel">
-    <h2>전체 거래 기록</h2>
-    <p class="panel-sub">최신순</p>
+    <h2>전체 거래 기록 (GDR-KR)</h2>
+    <p class="panel-sub">최신순 — ETF 거래 포함 통합 기록은 위 손익달력 참고</p>
     <div class="table-scroll">
       <table class="history">
         <thead>
@@ -506,11 +602,13 @@
       html += acct.holdings.map(h => {
         const barClass = h.pnl_pct >= 0 ? "gain" : "loss";
         const width = Math.max(2, (h.eval_amount / maxEval) * 100);
+        const weightPct = acct.total_eval_amount > 0 ? (h.eval_amount / acct.total_eval_amount) * 100 : 0;
         return `
           <div class="holding-row">
             <div class="holding-id">
               <span class="holding-name">${h.name || h.ticker}</span>
               <span class="holding-ticker mono">${h.ticker} · ${h.qty.toLocaleString()}주</span>
+              <span class="holding-weight mono">비중 ${weightPct.toFixed(1)}%</span>
             </div>
             <div>
               <div class="holding-bar-track">
@@ -529,6 +627,273 @@
     }
     acctWrap.innerHTML = html;
   }
+
+  // ---- strategy status board ----
+  (function () {
+    const wrap = document.getElementById("strategyBoardWrap");
+    const strategies = (DATA.strategy_data && DATA.strategy_data.strategies) || [];
+    if (!strategies.length) {
+      wrap.innerHTML = `<p class="empty-note">전략 데이터가 없습니다.</p>`;
+      return;
+    }
+    wrap.innerHTML = `<div class="strategy-grid">` + strategies.map(s => {
+      const clPct = Math.min(100, (s.consecutive_losses / s.consecutive_losses_limit) * 100);
+      const ddPct = s.drawdown_limit_pct !== 0
+        ? Math.min(100, (s.current_drawdown_pct / s.drawdown_limit_pct) * 100) : 0;
+      const pnlClass = signClass(s.cum_pnl_pct);
+      return `
+        <div class="strategy-card">
+          <div class="strategy-card-head">
+            <span class="strategy-card-label">${s.label}</span>
+            <span class="strategy-card-config mono">${s.config_note}</span>
+          </div>
+          <div class="strategy-stat-row">
+            <div class="strategy-stat">
+              <span class="strategy-stat-label">해소거래</span>
+              <span class="strategy-stat-value mono">${s.n_resolved}</span>
+            </div>
+            <div class="strategy-stat">
+              <span class="strategy-stat-label">진행중</span>
+              <span class="strategy-stat-value mono">${s.n_pending}</span>
+            </div>
+            <div class="strategy-stat">
+              <span class="strategy-stat-label">승률</span>
+              <span class="strategy-stat-value mono">${s.win_rate === null ? "—" : s.win_rate.toFixed(1) + "%"}</span>
+            </div>
+          </div>
+          <div class="strategy-stat-row">
+            <div class="strategy-stat">
+              <span class="strategy-stat-label">누적손익</span>
+              <span class="strategy-stat-value mono ${pnlClass}">${s.n_resolved ? fmtPct(s.cum_pnl_pct) : "—"}</span>
+            </div>
+            <div class="strategy-stat">
+              <span class="strategy-stat-label">현재낙폭</span>
+              <span class="strategy-stat-value mono">${s.n_resolved ? fmtPct(s.current_drawdown_pct) : "—"}</span>
+            </div>
+            <div class="strategy-stat">
+              <span class="strategy-stat-label">연속손실</span>
+              <span class="strategy-stat-value mono">${s.consecutive_losses}회</span>
+            </div>
+          </div>
+          <div class="strategy-meter-row">
+            <div class="strategy-meter-label"><span>연속손실 한도</span><span>${s.consecutive_losses}/${s.consecutive_losses_limit}</span></div>
+            <div class="strategy-meter-track"><div class="strategy-meter-fill ${clPct >= 100 ? 'danger' : ''}" style="width:${clPct}%"></div></div>
+          </div>
+          <div class="strategy-meter-row">
+            <div class="strategy-meter-label"><span>낙폭 한도</span><span>${fmtPct(s.current_drawdown_pct)} / ${fmtPct(s.drawdown_limit_pct)}</span></div>
+            <div class="strategy-meter-track"><div class="strategy-meter-fill ${ddPct >= 100 ? 'danger' : ''}" style="width:${Math.min(100, ddPct)}%"></div></div>
+          </div>
+        </div>
+      `;
+    }).join("") + `</div>`;
+  })();
+
+  // ---- risk metrics ----
+  (function () {
+    const wrap = document.getElementById("riskMetricsWrap");
+    const rm = DATA.risk_metrics;
+    if (!rm) { wrap.innerHTML = `<p class="empty-note">위험지표 데이터가 없습니다.</p>`; return; }
+
+    function tile(label, value, sub) {
+      return `<div class="kpi-card"><span class="kpi-label">${label}</span><span class="kpi-value mono">${value}</span><span class="kpi-sub">${sub}</span></div>`;
+    }
+
+    const mddTile = tile("최대낙폭(MDD)", rm.n_trades ? fmtPct(rm.max_drawdown_pct) : "—", `${rm.n_trades}건 거래 기준`);
+    const sharpeTile = rm.sharpe === null
+      ? tile("Sharpe(연율화)", "표본부족", `n=${rm.n_trading_days} (최소 ${rm.min_days_for_ratio}일)`)
+      : tile("Sharpe(연율화)", rm.sharpe.toFixed(2), `n=${rm.n_trading_days}일`);
+    const sortinoTile = rm.sortino === null
+      ? tile("Sortino(연율화)", "표본부족", `n=${rm.n_trading_days} (최소 ${rm.min_days_for_ratio}일)`)
+      : tile("Sortino(연율화)", rm.sortino.toFixed(2), `n=${rm.n_trading_days}일`);
+    const varTile = rm.var95_pct === null
+      ? tile("VaR(95%)", "표본부족", `n=${rm.n_trading_days} (최소 ${rm.min_days_for_var}일)`)
+      : tile("VaR(95%)", fmtPct(rm.var95_pct), "일간 하위 5% 손실");
+
+    let html = `<div class="risk-tile-row">${mddTile}${sharpeTile}${sortinoTile}${varTile}</div>`;
+    if (rm.bootstrap_ci) {
+      html += `<p class="risk-tile-note">MDD 95% 신뢰구간(이동블록 부트스트랩, block=15일, 1000회 재표본): ` +
+        `${fmtPct(rm.bootstrap_ci.mdd_ci_low_pct)} ~ ${fmtPct(rm.bootstrap_ci.mdd_ci_high_pct)}</p>`;
+    } else {
+      html += `<p class="risk-tile-note">부트스트랩 신뢰구간: 표본부족(최소 15거래일 필요, 현재 ${rm.n_trading_days}일) — ` +
+        `데이터가 쌓이면 자동으로 표시됩니다.</p>`;
+    }
+    wrap.innerHTML = html;
+  })();
+
+  // ---- P&L calendar ----
+  (function () {
+    const allTrades = (DATA.strategy_data && DATA.strategy_data.resolved_trades) || [];
+    const gridEl = document.getElementById("calendarGrid");
+    const summaryEl = document.getElementById("calendarSummaryRow");
+    const monthLabelEl = document.getElementById("calMonthLabel");
+    const daySubEl = document.getElementById("calendarDaySub");
+    const dayTradesBody = document.getElementById("calendarDayTradesBody");
+    const filterToggle = document.getElementById("calendarFilterToggle");
+    if (!gridEl) return;
+
+    const RES_LABEL = { target_hit: "목표달성", stop_hit: "손절", ambiguous: "충돌봉(보수)", close_exit: "종가청산" };
+    const STRAT_LABEL = { kr: "KR", etf: "ETF" };
+    const now = new Date();
+    let filter = "all";
+    let selectedDate = null;
+
+    function filtered() {
+      return filter === "all" ? allTrades : allTrades.filter(t => t.strategy === filter);
+    }
+
+    // 최근 거래가 있는 달을 기본으로 보여준다 — 없으면 실제 이번 달.
+    const withData = filtered();
+    let viewYear = now.getFullYear(), viewMonth = now.getMonth();   // 0-indexed month
+    if (withData.length) {
+      const latest = withData.reduce((a, b) => (a.date > b.date ? a : b));
+      viewYear = parseInt(latest.date.slice(0, 4), 10);
+      viewMonth = parseInt(latest.date.slice(4, 6), 10) - 1;
+    }
+
+    function ymd(y, m, d) {
+      return `${y}${String(m + 1).padStart(2, "0")}${String(d).padStart(2, "0")}`;
+    }
+
+    function groupByDate(trades) {
+      const g = {};
+      trades.forEach(t => { (g[t.date] = g[t.date] || []).push(t); });
+      return g;
+    }
+
+    function renderSummary() {
+      const trades = filtered();
+      const todayStr = ymd(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekStart = new Date(now); weekStart.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+      const weekStartStr = ymd(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate());
+      const monthPrefix = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+      const avg = arr => arr.length ? arr.reduce((a, b) => a + b.pnl_pct, 0) / arr.length : null;
+      const todayTrades = trades.filter(t => t.date === todayStr);
+      const weekTrades = trades.filter(t => t.date >= weekStartStr && t.date <= todayStr);
+      const monthTrades = trades.filter(t => t.date.slice(0, 6) === monthPrefix && t.date <= todayStr);
+      const cumSum = trades.reduce((a, b) => a + b.pnl_pct, 0);
+
+      function tile(label, value, sub) {
+        const cls = value === null ? "" : signClass(value);
+        return `<div class="kpi-card"><span class="kpi-label">${label}</span>` +
+          `<span class="kpi-value mono ${cls}">${value === null ? "—" : fmtPct(value)}</span>` +
+          `<span class="kpi-sub">${sub}</span></div>`;
+      }
+      summaryEl.innerHTML =
+        tile("오늘", avg(todayTrades), `${todayTrades.length}건`) +
+        tile("주간", avg(weekTrades), `${weekTrades.length}건`) +
+        tile("월간", avg(monthTrades), `${monthTrades.length}건`) +
+        tile("누적", trades.length ? cumSum : null, `${trades.length}건 (단순합)`);
+    }
+
+    function renderDayTrades(date) {
+      const trades = date ? groupByDate(filtered())[date] || [] : [];
+      daySubEl.textContent = date
+        ? `${date.slice(0, 4)}.${date.slice(4, 6)}.${date.slice(6, 8)} 거래 ${trades.length}건`
+        : "날짜를 선택하면 그날의 거래가 아래 표시됩니다.";
+      if (!trades.length) {
+        dayTradesBody.innerHTML = `<tr><td colspan="7" class="empty-note" style="padding:14px 10px;">${date ? "이 날짜엔 거래가 없습니다." : "선택된 날짜가 없습니다."}</td></tr>`;
+        return;
+      }
+      dayTradesBody.innerHTML = trades.map(t => `
+        <tr>
+          <td class="mono">${STRAT_LABEL[t.strategy] || t.strategy}</td>
+          <td class="mono">${t.ticker}</td>
+          <td class="mono">${fmtPrice(t.entry_price)}</td>
+          <td class="mono">${fmtPrice(t.target_price)}</td>
+          <td class="mono">${fmtPrice(t.stop_price)}</td>
+          <td><span class="res-pill ${t.pnl_pct > 0 ? 'win' : 'loss'}">${RES_LABEL[t.resolution] || t.resolution}</span></td>
+          <td class="mono ${signClass(t.pnl_pct)}">${fmtPct(t.pnl_pct, 3)}</td>
+        </tr>
+      `).join("");
+    }
+
+    function renderGrid() {
+      const byDate = groupByDate(filtered());
+      monthLabelEl.textContent = `${viewYear}년 ${viewMonth + 1}월`;
+
+      const firstOfMonth = new Date(viewYear, viewMonth, 1);
+      const firstWeekday = (firstOfMonth.getDay() + 6) % 7;   // 0=월요일 시작
+      const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
+      const daysInPrevMonth = new Date(viewYear, viewMonth, 0).getDate();
+
+      const weekdayLabels = ["MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN"]
+        .map(w => `<div class="calendar-weekday">${w}</div>`).join("");
+
+      const cells = [];
+      for (let i = 0; i < firstWeekday; i++) {
+        cells.push({ day: daysInPrevMonth - firstWeekday + i + 1, otherMonth: true, date: null });
+      }
+      for (let d = 1; d <= daysInMonth; d++) {
+        cells.push({ day: d, otherMonth: false, date: ymd(viewYear, viewMonth, d) });
+      }
+      while (cells.length % 7 !== 0) {
+        cells.push({ day: cells.length - (firstWeekday + daysInMonth) + 1, otherMonth: true, date: null });
+      }
+
+      const dayHtml = cells.map(c => {
+        if (c.otherMonth) {
+          return `<div class="calendar-day other-month"><span class="calendar-day-num mono">${c.day}</span></div>`;
+        }
+        const trades = byDate[c.date] || [];
+        const avgPnl = trades.length ? trades.reduce((a, b) => a + b.pnl_pct, 0) / trades.length : null;
+        const cls = avgPnl === null ? "" : (avgPnl > 0 ? "gain" : avgPnl < 0 ? "loss" : "");
+        const selCls = c.date === selectedDate ? "selected" : "";
+        const clickable = trades.length ? "has-trades" : "";
+        return `
+          <div class="calendar-day ${cls} ${selCls} ${clickable}" data-date="${c.date}">
+            <span class="calendar-day-num mono">${c.day}</span>
+            ${avgPnl !== null ? `<span class="calendar-day-pnl mono ${cls}">${fmtPct(avgPnl)}</span>` : ""}
+            ${trades.length ? `<span class="calendar-day-count mono">${trades.length}건</span>` : ""}
+          </div>
+        `;
+      }).join("");
+
+      gridEl.innerHTML = weekdayLabels + dayHtml;
+      gridEl.querySelectorAll(".calendar-day.has-trades").forEach(cell => {
+        cell.addEventListener("click", () => {
+          selectedDate = cell.dataset.date === selectedDate ? null : cell.dataset.date;
+          renderGrid();
+          renderDayTrades(selectedDate);
+        });
+      });
+    }
+
+    function renderAll() {
+      renderSummary();
+      renderGrid();
+      renderDayTrades(selectedDate);
+    }
+
+    document.getElementById("calPrevMonth").addEventListener("click", () => {
+      viewMonth -= 1;
+      if (viewMonth < 0) { viewMonth = 11; viewYear -= 1; }
+      selectedDate = null;
+      renderAll();
+    });
+    document.getElementById("calNextMonth").addEventListener("click", () => {
+      viewMonth += 1;
+      if (viewMonth > 11) { viewMonth = 0; viewYear += 1; }
+      selectedDate = null;
+      renderAll();
+    });
+    document.getElementById("calTodayBtn").addEventListener("click", () => {
+      viewYear = now.getFullYear(); viewMonth = now.getMonth();
+      selectedDate = null;
+      renderAll();
+    });
+    filterToggle.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        filterToggle.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        filter = btn.dataset.filter;
+        selectedDate = null;
+        renderAll();
+      });
+    });
+
+    renderAll();
+  })();
 
   // ---- stock chart (분봉/일봉/주봉/월봉) ----
   (function () {

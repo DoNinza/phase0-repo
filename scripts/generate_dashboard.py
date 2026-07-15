@@ -26,6 +26,7 @@ if str(_REPO_ROOT_FOR_IMPORT) not in sys.path:
 
 import requests
 
+from phase0.bootstrap.cluster_bootstrap import DailyRecord, moving_block_bootstrap
 from phase0.config.kis_credentials import CredentialsMissingError, load_credentials
 from phase0.config.kiwoom_credentials import load_credentials as load_kiwoom_credentials
 from phase0.data.bar_resample import resample_monthly, resample_weekly
@@ -37,14 +38,29 @@ from phase0.paper.trade_log import (
     weekly_return,
 )
 from phase0.risk.circuit_breaker import CircuitBreakerConfig, check_halt
+from phase0.risk.metrics import (
+    MIN_DAYS_FOR_RATIO, MIN_DAYS_FOR_VAR, daily_pnl_series, historical_var, sharpe_ratio,
+    sortino_ratio,
+)
 from scripts.collect_daily_bars_watchlist import BASE_DIR as DAILY_BARS_DIR, WATCHLIST
 from scripts.collect_minute_bars_kiwoom import fetch_ticker_bars as fetch_kiwoom_minute_bars, issue_token as issue_kiwoom_token
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LOG_PATH = REPO_ROOT / "data" / "paper_trading" / "gdr_trades.jsonl"
 HEARTBEAT_PATH = REPO_ROOT / "data" / "paper_trading" / "heartbeat.txt"
+ETF_LOG_PATH = REPO_ROOT / "data" / "paper_trading_etf" / "gdr_trades.jsonl"
 TEMPLATE_PATH = REPO_ROOT / "scripts" / "dashboard_template.html"
 DEFAULT_OUT_PATH = REPO_ROOT / "data" / "paper_trading" / "dashboard.html"
+
+# 전략 현황 보드용 — 사전등록된 챔피언 파라미터를 여기서 재선언하지 않고
+# 그대로 문자열로 echo만 한다(paper_trade_gdr.py/paper_trade_etf_gdr.py의
+# F_FILL/K_STOP이 단일 진실 공급원 — 결과 보고 다시 고르지 않는다는 원칙).
+STRATEGIES = [
+    {"key": "kr", "label": "GDR-KR", "log_path": LOG_PATH,
+     "config_note": "f_fill=1.0, k_stop=1.0 (95종목 사전등록 챔피언)"},
+    {"key": "etf", "label": "GDR-ETF", "log_path": ETF_LOG_PATH,
+     "config_note": "f_fill=1.0, k_stop=1.0 (59개 ETF 사전등록 챔피언)"},
+]
 
 US_MINUTE_BARS_DIR = REPO_ROOT / "data" / "minute_bars_us"
 US_MINUTE_HEARTBEAT_PATH = US_MINUTE_BARS_DIR / "heartbeat.txt"
@@ -240,6 +256,88 @@ def build_us_minute_bar_status() -> dict:
     return {"heartbeat": heartbeat, "tickers": tickers}
 
 
+def build_strategy_data() -> dict:
+    """전략별 페이퍼 트레이딩 현황(읽기전용) + 손익달력용 통합 거래 목록.
+
+    사전등록 파라미터는 config_note로 echo만 한다(재선택 없음). 서킷브레이커
+    상태는 CircuitBreakerConfig 기본값 대비 진행률로 표시 — 실제 halt 판정은
+    각 페이퍼 트레이딩 스크립트가 진입 시점에 이미 수행한다, 여기서는 표시만.
+    """
+    cb_config = CircuitBreakerConfig()
+    strategies_out = []
+    all_resolved: list[dict] = []
+
+    for s in STRATEGIES:
+        entries = load_entries(s["log_path"])
+        resolved = [e for e in entries if e.is_resolved]
+        pending = [e for e in entries if not e.is_resolved]
+        wins = [e for e in resolved if e.pnl_pct is not None and e.pnl_pct > 0]
+        win_rate = (len(wins) / len(resolved) * 100) if resolved else None
+        cum_pnl_pct = sum(e.pnl_pct for e in resolved) * 100 if resolved else 0.0
+
+        strategies_out.append({
+            "key": s["key"], "label": s["label"], "config_note": s["config_note"],
+            "n_resolved": len(resolved), "n_pending": len(pending),
+            "win_rate": win_rate, "cum_pnl_pct": cum_pnl_pct,
+            "consecutive_losses": consecutive_losses(entries),
+            "consecutive_losses_limit": cb_config.max_consecutive_losses,
+            "current_drawdown_pct": current_drawdown(entries) * 100,
+            "drawdown_limit_pct": cb_config.max_drawdown_pct * 100,
+        })
+        for e in resolved:
+            all_resolved.append({
+                "strategy": s["key"], "ticker": e.ticker, "date": e.date,
+                "entry_price": e.entry_price, "target_price": e.target_price,
+                "stop_price": e.stop_price, "resolution": e.resolution,
+                "pnl_pct": e.pnl_pct * 100,
+            })
+
+    return {"strategies": strategies_out, "resolved_trades": all_resolved}
+
+
+def build_risk_metrics() -> dict:
+    """두 전략(KR/ETF) 통합 위험지표 — Sharpe/Sortino/VaR는 표본 부족 시 None.
+
+    cluster_bootstrap.moving_block_bootstrap은 daily_records 길이가
+    block_length(15) 미만이면 ValueError를 던진다 — 표본부족을 그대로
+    실패로 전파하지 않고 여기서 흡수해 "부트스트랩 미가동"으로 표시한다.
+    """
+    combined_entries = [
+        e for s in STRATEGIES for e in load_entries(s["log_path"]) if e.is_resolved
+    ]
+    series = daily_pnl_series(combined_entries)
+    daily_returns = [r for _, r in series]
+    n_days = len(daily_returns)
+
+    bootstrap_ci = None
+    try:
+        by_date: dict[str, list[float]] = {}
+        for e in combined_entries:
+            by_date.setdefault(e.date, []).append(e.pnl_pct)
+        records = [
+            DailyRecord(date=d, account_return=sum(v) / len(v),
+                        trades=[{"pnl_pct": p, "is_win": p > 0} for p in v])
+            for d, v in sorted(by_date.items())
+        ]
+        result = moving_block_bootstrap(records, block_length=15, n_resamples=1000)
+        lo, hi = result.ci("account_metrics", "mdd")
+        bootstrap_ci = {"mdd_ci_low_pct": lo * 100, "mdd_ci_high_pct": hi * 100}
+    except ValueError:
+        bootstrap_ci = None
+
+    return {
+        "n_trading_days": n_days,
+        "n_trades": len(combined_entries),
+        "sharpe": sharpe_ratio(daily_returns),
+        "sortino": sortino_ratio(daily_returns),
+        "var95_pct": (v * 100 if (v := historical_var(daily_returns, 0.95)) is not None else None),
+        "max_drawdown_pct": current_drawdown(combined_entries) * 100 if combined_entries else 0.0,
+        "min_days_for_ratio": MIN_DAYS_FOR_RATIO,
+        "min_days_for_var": MIN_DAYS_FOR_VAR,
+        "bootstrap_ci": bootstrap_ci,
+    }
+
+
 def build_payload() -> dict:
     entries = load_entries(LOG_PATH)
     today = dt.date.today().strftime("%Y%m%d")
@@ -296,6 +394,8 @@ def build_payload() -> dict:
         "us_minute_bars": build_us_minute_bar_status(),
         "account": (account := build_account_status()),
         "chart_catalog": build_chart_catalog(account["holdings"] if account["available"] else []),
+        "strategy_data": build_strategy_data(),
+        "risk_metrics": build_risk_metrics(),
     }
 
 
@@ -320,6 +420,9 @@ def main() -> None:
     else:
         print(f"  실계좌 조회 실패: {acct['error']}")
     print(f"  종목별 차트 캐시: {len(payload['chart_catalog'])}종목")
+    rm = payload["risk_metrics"]
+    print(f"  위험지표: 거래일수={rm['n_trading_days']}, sharpe={rm['sharpe']}, "
+          f"sortino={rm['sortino']}, VaR95={rm['var95_pct']}")
 
 
 if __name__ == "__main__":
