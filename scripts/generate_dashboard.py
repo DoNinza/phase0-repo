@@ -15,6 +15,7 @@ import datetime as dt
 import json
 import sys
 import time
+from dataclasses import asdict
 from pathlib import Path
 
 _REPO_ROOT_FOR_IMPORT = Path(__file__).resolve().parents[1]
@@ -37,6 +38,7 @@ from phase0.data.pykrx_ingest import OhlcvBar, fetch_ohlcv
 from phase0.paper.account_snapshots import (
     AccountSnapshot, append_snapshot, latest_per_date, load_snapshots,
 )
+from phase0.paper.alerts import append_alert, diff_states, load_alerts
 from phase0.paper.trade_log import (
     consecutive_losses, current_drawdown, daily_return, load_entries, monthly_return,
     weekly_return,
@@ -54,6 +56,11 @@ LOG_PATH = REPO_ROOT / "data" / "paper_trading" / "gdr_trades.jsonl"
 HEARTBEAT_PATH = REPO_ROOT / "data" / "paper_trading" / "heartbeat.txt"
 ETF_LOG_PATH = REPO_ROOT / "data" / "paper_trading_etf" / "gdr_trades.jsonl"
 ACCOUNT_SNAPSHOTS_PATH = REPO_ROOT / "data" / "paper_trading" / "account_snapshots.jsonl"
+ALERTS_LOG_PATH = REPO_ROOT / "data" / "paper_trading" / "alerts.jsonl"
+# 상태전환 감지(diff_states)용 "직전 실행 상태" 스냅샷 — JSONL 누적이 아니라
+# 매번 덮어쓰는 단일 JSON 파일이다(account_snapshots.jsonl과 달리 이력 자체가
+# 필요 없고 "바로 직전 값"만 있으면 된다).
+DASHBOARD_STATE_PATH = REPO_ROOT / "data" / "paper_trading" / "dashboard_state.json"
 TEMPLATE_PATH = REPO_ROOT / "scripts" / "dashboard_template.html"
 DEFAULT_OUT_PATH = REPO_ROOT / "data" / "paper_trading" / "dashboard.html"
 
@@ -496,6 +503,41 @@ def build_risk_metrics() -> dict:
     }
 
 
+ALERTS_EMBEDDED_LIMIT = 50   # 대시보드 페이로드 크기 억제용(chart_catalog 교훈 — README "대시보드가 무거워짐" 참고)
+
+
+def _state_summary(payload: dict) -> dict:
+    """diff_states()의 입력이 될 축약 상태 dict — payload 전체가 아니라
+    "상태전환 감지"에 필요한 최소 필드만 뽑는다(순수 함수, I/O 없음).
+    """
+    return {
+        "halt_status": payload["halt_status"],
+        "pipelines": {
+            p["key"]: {"is_stale": p["is_stale"], "available": p["available"], "label": p["label"]}
+            for p in payload["system_health"]["pipelines"]
+        },
+        "account_available": payload["account"]["available"],
+        "strategies": {
+            s["key"]: {"n_resolved": s["n_resolved"], "label": s["label"]}
+            for s in payload["strategy_data"]["strategies"]
+        },
+    }
+
+
+def build_alerts() -> dict:
+    """alerts.jsonl을 읽기만 하는 순수 함수(B5) — 새 알림 판정·append는 main()의 몫.
+
+    다른 build_*()들처럼 부작용 없는 읽기 전용 — 이 함수를 호출한다고 새
+    알림이 쌓이지 않는다(equity_curve와 동일한 "읽기/쓰기 분리" 패턴).
+    """
+    all_alerts = load_alerts(ALERTS_LOG_PATH)
+    capped = all_alerts[-ALERTS_EMBEDDED_LIMIT:]
+    return {
+        "alerts": [asdict(a) for a in capped],
+        "n_total": len(all_alerts),
+    }
+
+
 def build_payload() -> dict:
     entries = load_entries(LOG_PATH)
     today = dt.date.today().strftime("%Y%m%d")
@@ -556,6 +598,7 @@ def build_payload() -> dict:
         "strategy_data": build_strategy_data(),
         "risk_metrics": build_risk_metrics(),
         "equity_curve": build_equity_curve(),
+        "alerts": build_alerts(),
     }
 
 
@@ -594,6 +637,26 @@ def main() -> None:
         # 거의 없다(KIS 재호출과 달리 로컬 파일 읽기일 뿐).
         payload["equity_curve"] = build_equity_curve()
 
+    # B5 알림: 직전 실행 상태(dashboard_state.json) 대비 상태전환만 사실로
+    # 기록한다 — 파라미터·전략 변경 추천은 diff_states()가 절대 만들지
+    # 않는다(house norm). 상태 파일이 아직 없으면(첫 실행) prev={}이고
+    # diff_states()가 빈 목록을 반환해 알림 홍수를 막는다.
+    prev_state = (
+        json.loads(DASHBOARD_STATE_PATH.read_text(encoding="utf-8"))
+        if DASHBOARD_STATE_PATH.exists() else {}
+    )
+    curr_state = _state_summary(payload)
+    new_alerts = diff_states(prev_state, curr_state)
+    for a in new_alerts:
+        append_alert(ALERTS_LOG_PATH, a)
+    DASHBOARD_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    DASHBOARD_STATE_PATH.write_text(json.dumps(curr_state, ensure_ascii=False), encoding="utf-8")
+    if new_alerts:
+        # build_payload() 안에서 계산된 payload["alerts"]는 방금 append한
+        # 알림들을 아직 반영하지 못한 상태 — equity_curve와 동일한 이유로
+        # 다시 계산해 이번 회차 대시보드에 바로 반영한다.
+        payload["alerts"] = build_alerts()
+
     payload_json = json.dumps(payload, ensure_ascii=False).replace("</script>", "<\\/script>")
 
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -622,6 +685,7 @@ def main() -> None:
     n_stale = sum(1 for p in sh["pipelines"] if p["available"] and p["is_stale"])
     print(f"  시스템 상태: 파이프라인 {len(sh['pipelines'])}개 중 가동 {n_available}개"
           f"(지연 {n_stale}개), 생성 소요시간 {sh['generation_timing']['total_seconds']:.2f}초")
+    print(f"  알림: 이번 실행 신규 {len(new_alerts)}건, 누적 {payload['alerts']['n_total']}건")
 
 
 if __name__ == "__main__":

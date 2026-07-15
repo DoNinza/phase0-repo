@@ -5,6 +5,7 @@ import pytest
 
 import scripts.generate_dashboard as gd
 from phase0.paper.account_snapshots import AccountSnapshot, append_snapshot
+from phase0.paper.alerts import Alert, append_alert
 from phase0.paper.trade_log import PaperEntry, append_entry
 
 
@@ -181,6 +182,53 @@ def test_read_last_nonempty_line_handles_small_and_missing_files(tmp_path):
     f = tmp_path / "small.jsonl"
     f.write_text('{"date": "20260101"}\n{"date": "20260102"}\n', encoding="utf-8")
     assert gd._read_last_nonempty_line(f) == '{"date": "20260102"}'
+
+
+def test_build_alerts_handles_missing_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(gd, "ALERTS_LOG_PATH", tmp_path / "does_not_exist.jsonl")
+
+    alerts = gd.build_alerts()
+    assert alerts["alerts"] == []
+    assert alerts["n_total"] == 0
+
+
+def test_build_alerts_respects_embedded_limit(tmp_path, monkeypatch):
+    alerts_path = tmp_path / "alerts.jsonl"
+    monkeypatch.setattr(gd, "ALERTS_LOG_PATH", alerts_path)
+    monkeypatch.setattr(gd, "ALERTS_EMBEDDED_LIMIT", 5)
+
+    for i in range(1, 11):   # 10건, 한도(5)보다 많음
+        append_alert(alerts_path, Alert(
+            ts=f"2026-07-{i:02d}T09:00:00", severity="info", category="sample_size",
+            message=f"전략 'GDR-KR' 해소 거래 수가 {i}건에 도달",
+        ))
+
+    alerts = gd.build_alerts()
+    assert alerts["n_total"] == 10
+    assert len(alerts["alerts"]) == 5
+    # 한도를 넘으면 가장 최근 것들만 남아야 한다(과거가 아니라 최신을 유지)
+    assert alerts["alerts"][-1]["ts"] == "2026-07-10T09:00:00"
+    assert alerts["alerts"][0]["ts"] == "2026-07-06T09:00:00"
+
+
+def test_state_summary_extracts_minimal_diff_input(tmp_path):
+    payload = {
+        "halt_status": "drawdown_limit",
+        "system_health": {"pipelines": [
+            {"key": "kr", "label": "GDR-KR 파이프라인", "is_stale": True, "available": False},
+        ]},
+        "account": {"available": True},
+        "strategy_data": {"strategies": [
+            {"key": "kr", "label": "GDR-KR", "n_resolved": 42},
+        ]},
+    }
+    summary = gd._state_summary(payload)
+    assert summary == {
+        "halt_status": "drawdown_limit",
+        "pipelines": {"kr": {"is_stale": True, "available": False, "label": "GDR-KR 파이프라인"}},
+        "account_available": True,
+        "strategies": {"kr": {"n_resolved": 42, "label": "GDR-KR"}},
+    }
 
 
 def test_read_last_nonempty_line_across_chunk_boundary(tmp_path):

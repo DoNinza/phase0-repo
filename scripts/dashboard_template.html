@@ -392,6 +392,28 @@
   .res-pill.loss { background: var(--loss-soft); color: var(--loss); }
   .res-pill.pending { background: var(--accent-soft); color: var(--accent); }
 
+  /* ---------- alerts (B5, 상태전환) — res-pill과 같은 chip 모양, 심각도색만 다르다 ---------- */
+  .alert-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  .alert-pill.info { background: color-mix(in srgb, var(--status-good) 14%, transparent); color: var(--status-good); }
+  .alert-pill.warn { background: color-mix(in srgb, var(--status-warn) 16%, transparent); color: var(--status-warn); }
+  .alert-banner { display: flex; flex-direction: column; }
+  .alert-banner-item {
+    display: flex; align-items: baseline; gap: 10px;
+    padding: 8px 2px; border-top: 1px solid var(--border); font-size: 12.5px;
+  }
+  .alert-banner-item:first-child { border-top: none; }
+  .alert-banner-msg { flex: 1; }
+  .alert-banner-time { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
+
   /* ---------- footer ---------- */
   .methodology {
     font-size: 12px;
@@ -423,6 +445,12 @@
   </nav>
 
   <div class="tab-panel active" data-tab="overview">
+    <section class="panel">
+      <h2>최근 알림</h2>
+      <p class="panel-sub">최근 24시간 상태전환 알림 최대 5건 — 사실 서술만 표시, 파라미터·전략 변경 권장 없음</p>
+      <div id="alertBannerWrap"></div>
+    </section>
+
     <section class="panel">
       <h2>실계좌 현황</h2>
       <p class="panel-sub" id="accountSub">KIS 잔고조회(읽기 전용) · 아래 페이퍼 트레이딩 시뮬레이션과는 별개의 실제 계좌 데이터</p>
@@ -546,6 +574,11 @@
       <h2>파이프라인 상태</h2>
       <p class="panel-sub" id="systemHealthSub">실측 하트비트·파일 개수·용량만 표시(가상 CPU/RAM 게이지 없음)</p>
       <div id="systemHealthWrap"></div>
+    </section>
+    <section class="panel">
+      <h2>알림 로그</h2>
+      <p class="panel-sub" id="alertsLogSub">상태전환 사실만 기록 — 파라미터·전략 변경 권장 없음</p>
+      <div id="alertsLogWrap"></div>
     </section>
     <section class="panel">
       <h2>미국주식 분봉 축적 현황</h2>
@@ -1453,6 +1486,76 @@
         </table>
       </div>
     `;
+  })();
+
+  // ---- alerts (B5, 상태전환 알림) — 개요 탭 배너 + 데이터·시스템 탭 전체 로그 ----
+  // 여기서 만드는 메시지는 build_alerts()/diff_states()가 이미 사실 서술로만
+  // 채워 넣은 것을 그대로 표시할 뿐이다 — 이 스크립트가 새 문구를 조합하지
+  // 않는다(추천/제안 문구가 섞여 들어갈 여지를 원천 차단).
+  (function () {
+    const CATEGORY_LABEL = {
+      circuit_breaker: "서킷브레이커", heartbeat: "파이프라인",
+      account: "실계좌", sample_size: "표본크기",
+    };
+    const SEVERITY_LABEL = { info: "안내", warn: "주의" };
+    const alertsData = DATA.alerts || { alerts: [], n_total: 0 };
+    const allAlerts = alertsData.alerts || [];
+
+    function pill(severity) {
+      return `<span class="alert-pill ${severity}">${SEVERITY_LABEL[severity] || severity}</span>`;
+    }
+
+    // 최근 24시간 배너(개요 탭) — 최신순 최대 5건.
+    const bannerWrap = document.getElementById("alertBannerWrap");
+    if (bannerWrap) {
+      const recent = allAlerts
+        .filter(a => Date.now() - new Date(a.ts).getTime() <= 24 * 36e5)
+        .slice().reverse().slice(0, 5);
+      if (!recent.length) {
+        bannerWrap.innerHTML = `<p class="empty-note">최근 24시간 내 상태전환 알림이 없습니다.</p>`;
+      } else {
+        bannerWrap.innerHTML = `<div class="alert-banner">` + recent.map(a => `
+          <div class="alert-banner-item">
+            ${pill(a.severity)}
+            <span class="alert-banner-msg">${a.message}</span>
+            <span class="alert-banner-time mono">${a.ts.replace("T", " ")}</span>
+          </div>
+        `).join("") + `</div>`;
+      }
+    }
+
+    // 전체 알림 로그(데이터·시스템 탭) — 최신순, 이미 서버에서 최근
+    // ALERTS_EMBEDDED_LIMIT건으로 잘려 온 목록(build_alerts())을 그대로 나열.
+    const logWrap = document.getElementById("alertsLogWrap");
+    const logSub = document.getElementById("alertsLogSub");
+    if (logWrap) {
+      if (logSub) {
+        logSub.textContent = "상태전환 사실만 기록 — 파라미터·전략 변경 권장 없음"
+          + (alertsData.n_total ? ` · 누적 ${alertsData.n_total}건 중 최근 ${allAlerts.length}건 표시` : "");
+      }
+      if (!allAlerts.length) {
+        logWrap.innerHTML = `<p class="empty-note">아직 기록된 알림이 없습니다.</p>`;
+      } else {
+        const sorted = allAlerts.slice().reverse();
+        logWrap.innerHTML = `
+          <div class="table-scroll">
+            <table class="history">
+              <thead><tr><th>시각</th><th>심각도</th><th>구분</th><th>내용</th></tr></thead>
+              <tbody>
+                ${sorted.map(a => `
+                  <tr>
+                    <td class="mono">${a.ts.replace("T", " ")}</td>
+                    <td>${pill(a.severity)}</td>
+                    <td>${CATEGORY_LABEL[a.category] || a.category}</td>
+                    <td>${a.message}</td>
+                  </tr>
+                `).join("")}
+              </tbody>
+            </table>
+          </div>
+        `;
+      }
+    }
   })();
 
   // ---- US minute bar accumulation status ----
