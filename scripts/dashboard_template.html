@@ -414,6 +414,55 @@
   .alert-banner-msg { flex: 1; }
   .alert-banner-time { color: var(--text-muted); font-size: 11px; white-space: nowrap; }
 
+  /* ---------- backtest results (B7) — 사전 등록 결과 정적 표시, 재실행 버튼 없음 ---------- */
+  .backtest-set {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 12px 14px;
+  }
+  .backtest-set + .backtest-set { margin-top: 12px; }
+  .backtest-set > summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .backtest-set > summary::-webkit-details-marker { display: none; }
+  .backtest-set > summary::before { content: "▸"; color: var(--text-muted); margin-right: 2px; }
+  .backtest-set[open] > summary::before { content: "▾"; }
+  .bt-strategy { font-weight: 700; color: var(--accent); font-size: 13.5px; }
+  .bt-title { font-size: 12.5px; color: var(--text-secondary); }
+  .bt-meta { margin: 6px 0 10px; font-size: 12px; color: var(--text-muted); }
+  .bt-best-cell { color: var(--text-primary); font-weight: 700; }
+  .verdict-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-size: 11.5px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    white-space: nowrap;
+  }
+  /* reject/insufficient_sample 모두 "통과하지 못함"이라는 사실은 감추지 않는다 —
+     둘 다 gain(상승/성공) 색은 절대 쓰지 않고, reject는 loss색, insufficient_sample은
+     회색(idle, "아직 모름")으로만 구분한다. */
+  .verdict-pill.reject { background: color-mix(in srgb, var(--loss) 16%, transparent); color: var(--loss); }
+  .verdict-pill.insufficient_sample { background: color-mix(in srgb, var(--status-idle) 22%, transparent); color: var(--text-secondary); }
+  .bt-verdict-detail { font-size: 11px; color: var(--text-muted); margin-top: 3px; max-width: 220px; white-space: normal; }
+  .bt-incomplete-note {
+    margin: 10px 0 0;
+    font-size: 12px;
+    color: var(--status-warn);
+    background: color-mix(in srgb, var(--status-warn) 10%, transparent);
+    border-radius: 4px;
+    padding: 6px 10px;
+  }
+  .bt-conclusion { margin: 10px 0 0; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+  .bt-source { margin: 6px 0 0; font-size: 11px; color: var(--text-muted); }
+
   /* ---------- footer ---------- */
   .methodology {
     font-size: 12px;
@@ -442,6 +491,7 @@
     <button type="button" class="tab-btn" data-tab="chart"><span class="tab-key">3</span>종목차트</button>
     <button type="button" class="tab-btn" data-tab="history"><span class="tab-key">4</span>거래기록</button>
     <button type="button" class="tab-btn" data-tab="system"><span class="tab-key">5</span>데이터·시스템</button>
+    <button type="button" class="tab-btn" data-tab="backtest"><span class="tab-key">6</span>백테스트</button>
   </nav>
 
   <div class="tab-panel active" data-tab="overview">
@@ -584,6 +634,14 @@
       <h2>미국주식 분봉 축적 현황</h2>
       <p class="panel-sub">yfinance 5분봉, 60일 롤링 윈도우 — GDR 페이퍼 트레이딩과는 별도인 데이터 축적 파이프라인</p>
       <div id="usMinuteBarsWrap"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-tab="backtest">
+    <section class="panel">
+      <h2>사전 등록 백테스트 결과</h2>
+      <p class="panel-sub">README.md에 이미 보고된 결과를 그대로 옮긴 정적 표 — 재실행/재계산 버튼 없음, 결과 확정 후 파라미터를 다시 고르지 않는다는 이 프로젝트의 사전등록 원칙</p>
+      <div id="backtestResultsWrap"></div>
     </section>
   </div>
 
@@ -1610,4 +1668,54 @@
       `;
     }).join("");
   }
+
+  // ---- B7: 사전 등록 백테스트 결과 (정적 표시 전용, 재계산 없음) ----
+  (function () {
+    const btWrap = document.getElementById("backtestResultsWrap");
+    const btData = DATA.backtest_results || { result_sets: [] };
+    const sets = btData.result_sets || [];
+    if (!sets.length) {
+      btWrap.innerHTML = `<p class="empty-note">등록된 백테스트 결과가 없습니다.</p>`;
+      return;
+    }
+
+    function verdictHtml(verdict, detail) {
+      if (!verdict) return `<span class="mono">—</span>`;
+      const cls = verdict === "reject" ? "reject" : "insufficient_sample";
+      const pill = `<span class="verdict-pill ${cls}">${verdict}</span>`;
+      const detailHtml = detail ? `<div class="bt-verdict-detail">${detail}</div>` : "";
+      return pill + detailHtml;
+    }
+
+    btWrap.innerHTML = sets.map((rs, i) => `
+      <details class="backtest-set" ${i === 0 ? "open" : ""}>
+        <summary>
+          <span class="bt-strategy">${rs.strategy}</span>
+          <span class="bt-title">${rs.title}</span>
+        </summary>
+        <p class="bt-meta">${rs.universe} · ${rs.period}</p>
+        <div class="table-scroll">
+          <table class="history">
+            <thead>
+              <tr>
+                ${rs.columns.map(c => `<th>${c}</th>`).join("")}
+                <th>판정</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rs.rows.map(row => `
+                <tr>
+                  ${row.cells.map((c, ci) => `<td class="mono ${row.best && ci === row.cells.length - 1 ? "bt-best-cell" : ""}">${c}</td>`).join("")}
+                  <td>${verdictHtml(row.verdict, row.verdict_detail)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+        ${rs.incomplete_note ? `<p class="bt-incomplete-note">${rs.incomplete_note}</p>` : ""}
+        <p class="bt-conclusion">${rs.conclusion}</p>
+        <p class="bt-source">출처: ${rs.source} (${rs.date})</p>
+      </details>
+    `).join("");
+  })();
 </script>

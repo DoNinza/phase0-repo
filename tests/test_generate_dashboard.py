@@ -237,3 +237,41 @@ def test_read_last_nonempty_line_across_chunk_boundary(tmp_path):
     f = tmp_path / "big.jsonl"
     f.write_text('{"date": "20260101"}\n' + ("x" * 50) + '\n{"date": "20260228"}\n', encoding="utf-8")
     assert gd._read_last_nonempty_line(f, chunk_size=8) == '{"date": "20260228"}'
+
+
+# ---- B7: 사전 등록 백테스트 결과 탭 — 정적 데이터라 구조만 가볍게 확인한다 ----
+
+def test_build_backtest_results_returns_nonempty_well_formed_structure():
+    payload = gd.build_backtest_results()
+    result_sets = payload["result_sets"]
+    assert len(result_sets) > 0
+
+    expected_keys = {
+        "key", "title", "strategy", "universe", "period", "columns",
+        "rows", "conclusion", "source", "date", "incomplete_note",
+    }
+    seen_keys = []
+    for rs in result_sets:
+        assert expected_keys.issubset(rs.keys())
+        assert rs["key"]
+        seen_keys.append(rs["key"])
+        assert isinstance(rs["columns"], list) and rs["columns"]
+        assert isinstance(rs["rows"], list) and rs["rows"]
+        for row in rs["rows"]:
+            assert set(row.keys()) == {"cells", "verdict", "verdict_detail", "best"}
+            # 판정이 없는 표(ML 필터 OOS)를 제외하면, 값이 있을 때는
+            # README가 실제로 쓴 두 판정 토큰 중 하나여야 한다(재작문 금지 확인).
+            if row["verdict"]:
+                assert row["verdict"] in {"reject", "insufficient_sample"}
+            assert len(row["cells"]) == len(rs["columns"])
+
+    # key는 대시보드 JS가 없어도 그 자체로 유일해야 나중에 뒤섞이지 않는다.
+    assert len(seen_keys) == len(set(seen_keys))
+
+
+def test_build_backtest_results_is_json_serializable():
+    payload = gd.build_backtest_results()
+    encoded = json.dumps(payload, ensure_ascii=False)
+    assert len(encoded) > 0
+    # 소수점 재계산 없는 정적 문자열 데이터라 다시 파싱해도 원본과 동일해야 한다.
+    assert json.loads(encoded) == payload

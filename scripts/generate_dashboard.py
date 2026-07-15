@@ -28,6 +28,7 @@ if str(_REPO_ROOT_FOR_IMPORT) not in sys.path:
 
 import requests
 
+from phase0.backtest.preregistered_results import ALL_RESULT_SETS
 from phase0.bootstrap.cluster_bootstrap import DailyRecord, moving_block_bootstrap
 from phase0.config.kis_credentials import CredentialsMissingError, load_credentials
 from phase0.config.kiwoom_credentials import load_credentials as load_kiwoom_credentials
@@ -538,6 +539,42 @@ def build_alerts() -> dict:
     }
 
 
+def build_backtest_results() -> dict:
+    """B7: 사전 등록 백테스트 결과 탭 — phase0/backtest/preregistered_results.py의
+    고정 상수를 JSON 직렬화 가능한 구조로 재배열만 한다(계산 없음, 순수 읽기).
+
+    이 함수가 실행할 때마다 새로 계산하는 값은 하나도 없다 — README.md에
+    이미 보고된 사전 등록 격자 백테스트 결과를 그대로 옮겨 적은 정적 데이터를
+    반환할 뿐이다(재실행/재계산 버튼이 없는 이유와 동일한 원칙).
+    """
+    return {
+        "result_sets": [
+            {
+                "key": rs.key,
+                "title": rs.title,
+                "strategy": rs.strategy,
+                "universe": rs.universe,
+                "period": rs.period,
+                "columns": list(rs.columns),
+                "rows": [
+                    {
+                        "cells": list(row.cells),
+                        "verdict": row.verdict,
+                        "verdict_detail": row.verdict_detail,
+                        "best": row.best,
+                    }
+                    for row in rs.rows
+                ],
+                "conclusion": rs.conclusion,
+                "source": rs.source,
+                "date": rs.date,
+                "incomplete_note": rs.incomplete_note,
+            }
+            for rs in ALL_RESULT_SETS
+        ],
+    }
+
+
 def build_payload() -> dict:
     entries = load_entries(LOG_PATH)
     today = dt.date.today().strftime("%Y%m%d")
@@ -599,6 +636,7 @@ def build_payload() -> dict:
         "risk_metrics": build_risk_metrics(),
         "equity_curve": build_equity_curve(),
         "alerts": build_alerts(),
+        "backtest_results": build_backtest_results(),
     }
 
 
@@ -686,6 +724,7 @@ def main() -> None:
     print(f"  시스템 상태: 파이프라인 {len(sh['pipelines'])}개 중 가동 {n_available}개"
           f"(지연 {n_stale}개), 생성 소요시간 {sh['generation_timing']['total_seconds']:.2f}초")
     print(f"  알림: 이번 실행 신규 {len(new_alerts)}건, 누적 {payload['alerts']['n_total']}건")
+    print(f"  백테스트 결과 탭: 결과셋 {len(payload['backtest_results']['result_sets'])}개(정적 데이터, README 전사)")
 
 
 if __name__ == "__main__":
