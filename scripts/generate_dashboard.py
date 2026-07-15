@@ -169,13 +169,18 @@ def build_account_status() -> dict:
     }
 
 
+DAILY_BARS_EMBEDDED_LIMIT = 260   # 대시보드 페이로드 크기 억제용(약 1년치) — weekly/monthly는 전체 이력으로 계산 후 별도 임베드
+
+
 def _bar_dict(b: OhlcvBar) -> dict:
-    return {"date": b.date, "open": b.open, "high": b.high, "low": b.low, "close": b.close, "volume": b.volume}
+    # 키를 한 글자로 줄인다 — chart_catalog가 워치리스트 35종목 x 3개 타임프레임을
+    # 통째로 임베드해 페이로드가 커서(README "대시보드가 무거워짐" 참고) 반복되는
+    # 키 이름 자체가 용량을 크게 차지했다.
+    return {"d": b.date, "o": b.open, "h": b.high, "l": b.low, "c": b.close, "v": b.volume}
 
 
 def _minute_bar_dict(b) -> dict:
-    return {"date": b.date, "time": b.time, "open": b.open, "high": b.high, "low": b.low,
-            "close": b.close, "volume": b.volume}
+    return {"d": b.date, "t": b.time, "o": b.open, "h": b.high, "l": b.low, "c": b.close, "v": b.volume}
 
 
 def build_chart_catalog(holdings: list[dict]) -> dict:
@@ -225,7 +230,7 @@ def build_chart_catalog(holdings: list[dict]) -> dict:
 
         catalog[ticker] = {
             "name": held_names.get(ticker) or TICKER_NAMES.get(ticker, ticker),
-            "daily": [_bar_dict(b) for b in daily],
+            "daily": [_bar_dict(b) for b in daily[-DAILY_BARS_EMBEDDED_LIMIT:]],
             "weekly": [_bar_dict(b) for b in resample_weekly(daily)],
             "monthly": [_bar_dict(b) for b in resample_monthly(daily)],
             "minute": minute,

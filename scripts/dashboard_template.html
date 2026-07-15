@@ -997,10 +997,10 @@
       const W = padL + padR + bars.length * step;
       const H = padT + chartH + gapH + volH + padB;
 
-      let minV = Math.min(...bars.map(b => b.low)), maxV = Math.max(...bars.map(b => b.high));
+      let minV = Math.min(...bars.map(b => b.l)), maxV = Math.max(...bars.map(b => b.h));
       const vpad = (maxV - minV) * 0.06 || 1;
       minV -= vpad; maxV += vpad;
-      const maxVol = Math.max(...bars.map(b => b.volume), 1);
+      const maxVol = Math.max(...bars.map(b => b.v), 1);
 
       const yAt = v => padT + (1 - (v - minV) / (maxV - minV)) * chartH;
       const volYAt = v => padT + chartH + gapH + (1 - v / maxVol) * volH;
@@ -1017,11 +1017,11 @@
       let candles = "";
       bars.forEach((b, i) => {
         const x = xAt(i);
-        const up = b.close >= b.open;
+        const up = b.c >= b.o;
         const color = up ? "var(--gain)" : "var(--loss)";
-        const yO = yAt(b.open), yC = yAt(b.close), yH = yAt(b.high), yL = yAt(b.low);
+        const yO = yAt(b.o), yC = yAt(b.c), yH = yAt(b.h), yL = yAt(b.l);
         const bodyTop = Math.min(yO, yC), bodyH = Math.max(1, Math.abs(yC - yO));
-        const volY = volYAt(b.volume);
+        const volY = volYAt(b.v);
         candles += `
           <line x1="${x}" y1="${yH}" x2="${x}" y2="${yL}" stroke="${color}" stroke-width="1"/>
           <rect x="${x - candleW / 2}" y="${bodyTop}" width="${candleW}" height="${bodyH}" fill="${color}" rx="1"/>
@@ -1035,8 +1035,8 @@
       bars.forEach((b, i) => {
         if (i % labelEvery !== 0) return;
         const label = isMinute
-          ? `${b.date.slice(4, 6)}/${b.date.slice(6, 8)} ${b.time.slice(0, 2)}:${b.time.slice(2, 4)}`
-          : `${b.date.slice(0, 4)}.${b.date.slice(4, 6)}.${b.date.slice(6, 8)}`;
+          ? `${b.d.slice(4, 6)}/${b.d.slice(6, 8)} ${b.t.slice(0, 2)}:${b.t.slice(2, 4)}`
+          : `${b.d.slice(0, 4)}.${b.d.slice(4, 6)}.${b.d.slice(6, 8)}`;
         xLabels += `<text x="${xAt(i)}" y="${H - 4}" text-anchor="middle" class="mono" font-size="10" fill="var(--text-muted)">${label}</text>`;
       });
 
@@ -1059,9 +1059,9 @@
           crosshair.setAttribute("x1", xAt(+hit.dataset.i));
           crosshair.setAttribute("x2", xAt(+hit.dataset.i));
           crosshair.setAttribute("opacity", "1");
-          const dateLabel = isMinute ? `${b.date} ${b.time.slice(0, 2)}:${b.time.slice(2, 4)}` : b.date;
+          const dateLabel = isMinute ? `${b.d} ${b.t.slice(0, 2)}:${b.t.slice(2, 4)}` : b.d;
           info.innerHTML = `<span class="t-date mono">${dateLabel}</span>` +
-            `<span class="mono">시 ${fmtPrice(b.open)} · 고 ${fmtPrice(b.high)} · 저 ${fmtPrice(b.low)} · 종 ${fmtPrice(b.close)} · 거래량 ${Math.round(b.volume).toLocaleString()}</span>`;
+            `<span class="mono">시 ${fmtPrice(b.o)} · 고 ${fmtPrice(b.h)} · 저 ${fmtPrice(b.l)} · 종 ${fmtPrice(b.c)} · 거래량 ${Math.round(b.v).toLocaleString()}</span>`;
         });
       });
       svg.addEventListener("mouseleave", () => { crosshair.setAttribute("opacity", "0"); info.innerHTML = ""; });
