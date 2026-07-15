@@ -242,6 +242,28 @@
   .holding-bar-sub { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-muted); margin-top: 4px; }
   .holding-pnl { text-align: right; font-weight: 700; font-size: 13.5px; }
 
+  /* ---------- stock chart ---------- */
+  .stock-chart-toolbar { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-bottom: 14px; }
+  #stockSearchInput {
+    flex: 1; min-width: 220px; padding: 8px 12px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--surface-2); color: var(--text-primary); font-size: 13.5px;
+  }
+  #stockSearchInput::placeholder { color: var(--text-muted); }
+  .tf-toggle { display: flex; gap: 4px; background: var(--surface-2); border-radius: 8px; padding: 3px; }
+  .tf-toggle button {
+    border: none; background: transparent; color: var(--text-secondary); font-size: 12.5px;
+    font-weight: 600; padding: 6px 14px; border-radius: 6px; cursor: pointer;
+  }
+  .tf-toggle button.active { background: var(--surface); color: var(--text-primary); box-shadow: var(--shadow); }
+  .tf-toggle button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .stock-chart-scroll { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-2); }
+  .stock-chart-info {
+    margin-top: 8px; font-size: 12.5px; color: var(--text-secondary);
+    min-height: 18px;
+  }
+  .stock-chart-info .t-date { color: var(--text-muted); margin-right: 8px; }
+  .stock-chart-note { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+
   /* ---------- positions ---------- */
   .position-card {
     display: grid;
@@ -321,6 +343,23 @@
     <h2>실계좌 현황</h2>
     <p class="panel-sub" id="accountSub">KIS 잔고조회(읽기 전용) · 아래 페이퍼 트레이딩 시뮬레이션과는 별개의 실제 계좌 데이터</p>
     <div id="accountWrap"></div>
+  </section>
+
+  <section class="panel">
+    <h2>종목별 차트</h2>
+    <p class="panel-sub">보유종목+워치리스트(KR 기본 20·ETF 기본 15) 대상 검색 · 분봉은 보유종목만 대시보드 생성 시 키움 API로 즉석조회</p>
+    <div class="stock-chart-toolbar">
+      <input list="stockTickerList" id="stockSearchInput" class="mono" placeholder="종목코드 또는 이름 검색 (예: 005930, 삼성전자)" autocomplete="off" />
+      <datalist id="stockTickerList"></datalist>
+      <div class="tf-toggle" id="tfToggle">
+        <button type="button" data-tf="minute">분봉</button>
+        <button type="button" data-tf="daily">일봉</button>
+        <button type="button" data-tf="weekly">주봉</button>
+        <button type="button" data-tf="monthly">월봉</button>
+      </div>
+    </div>
+    <div id="stockChartWrap"></div>
+    <div class="stock-chart-info" id="stockChartInfo"></div>
   </section>
 
   <section class="kpi-row" id="kpiRow"></section>
@@ -478,6 +517,166 @@
     }
     acctWrap.innerHTML = html;
   }
+
+  // ---- stock chart (분봉/일봉/주봉/월봉) ----
+  (function () {
+    const catalog = DATA.chart_catalog || {};
+    const tickers = Object.keys(catalog);
+    const wrap = document.getElementById("stockChartWrap");
+    const info = document.getElementById("stockChartInfo");
+    const searchInput = document.getElementById("stockSearchInput");
+    const tickerList = document.getElementById("stockTickerList");
+    const tfToggle = document.getElementById("tfToggle");
+    const TF_LABEL = { minute: "분봉", daily: "일봉", weekly: "주봉", monthly: "월봉" };
+
+    if (!tickers.length) {
+      wrap.innerHTML = `<div class="chart-empty">아직 캐시된 종목 차트 데이터가 없습니다 — 워치리스트 일봉 수집이 하루에 한 번 돕니다.</div>`;
+      searchInput.disabled = true;
+      tfToggle.style.display = "none";
+      return;
+    }
+
+    tickerList.innerHTML = tickers.map(t => `<option value="${t} ${catalog[t].name}"></option>`).join("");
+
+    const heldTickers = (DATA.account && DATA.account.available ? DATA.account.holdings : []).map(h => h.ticker);
+    let currentTicker = tickers.find(t => heldTickers.includes(t)) || tickers[0];
+    let currentTf = "daily";
+    searchInput.value = `${currentTicker} ${catalog[currentTicker].name}`;
+
+    function resolveTicker(raw) {
+      const trimmed = raw.trim();
+      if (catalog[trimmed]) return trimmed;
+      const code = trimmed.split(/\s+/)[0];
+      if (catalog[code]) return code;
+      return tickers.find(t => catalog[t].name === trimmed || `${t} ${catalog[t].name}` === trimmed) || null;
+    }
+
+    function updateToggleState(entry) {
+      tfToggle.querySelectorAll("button").forEach(btn => {
+        const tf = btn.dataset.tf;
+        const available = tf === "minute" ? !!entry.minute : (entry[tf] && entry[tf].length > 0);
+        btn.disabled = !available;
+        btn.classList.toggle("active", tf === currentTf);
+      });
+    }
+
+    function renderCandles(bars, isMinute) {
+      const candleW = isMinute ? 4 : 7;
+      const gapPx = isMinute ? 1 : 2;
+      const step = candleW + gapPx;
+      const padL = 54, padR = 16, padT = 12, padB = 20;
+      const chartH = 240, volH = 56, gapH = 10;
+      const W = padL + padR + bars.length * step;
+      const H = padT + chartH + gapH + volH + padB;
+
+      let minV = Math.min(...bars.map(b => b.low)), maxV = Math.max(...bars.map(b => b.high));
+      const vpad = (maxV - minV) * 0.06 || 1;
+      minV -= vpad; maxV += vpad;
+      const maxVol = Math.max(...bars.map(b => b.volume), 1);
+
+      const yAt = v => padT + (1 - (v - minV) / (maxV - minV)) * chartH;
+      const volYAt = v => padT + chartH + gapH + (1 - v / maxVol) * volH;
+      const xAt = i => padL + i * step + step / 2;
+
+      let grid = "";
+      for (let i = 0; i <= 4; i++) {
+        const v = minV + (i / 4) * (maxV - minV);
+        const y = yAt(v);
+        grid += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+        grid += `<text x="${padL - 8}" y="${y + 3}" text-anchor="end" class="mono" font-size="10" fill="var(--text-muted)">${Math.round(v).toLocaleString()}</text>`;
+      }
+
+      let candles = "";
+      bars.forEach((b, i) => {
+        const x = xAt(i);
+        const up = b.close >= b.open;
+        const color = up ? "var(--gain)" : "var(--loss)";
+        const yO = yAt(b.open), yC = yAt(b.close), yH = yAt(b.high), yL = yAt(b.low);
+        const bodyTop = Math.min(yO, yC), bodyH = Math.max(1, Math.abs(yC - yO));
+        const volY = volYAt(b.volume);
+        candles += `
+          <line x1="${x}" y1="${yH}" x2="${x}" y2="${yL}" stroke="${color}" stroke-width="1"/>
+          <rect x="${x - candleW / 2}" y="${bodyTop}" width="${candleW}" height="${bodyH}" fill="${color}" rx="1"/>
+          <rect x="${x - candleW / 2}" y="${volY}" width="${candleW}" height="${padT + chartH + gapH + volH - volY}" fill="${color}" opacity="0.4"/>
+          <rect class="hit" data-i="${i}" x="${x - step / 2}" y="0" width="${step}" height="${H}" fill="transparent"/>
+        `;
+      });
+
+      const labelEvery = Math.max(1, Math.ceil(bars.length / 7));
+      let xLabels = "";
+      bars.forEach((b, i) => {
+        if (i % labelEvery !== 0) return;
+        const label = isMinute
+          ? `${b.date.slice(4, 6)}/${b.date.slice(6, 8)} ${b.time.slice(0, 2)}:${b.time.slice(2, 4)}`
+          : `${b.date.slice(0, 4)}.${b.date.slice(4, 6)}.${b.date.slice(6, 8)}`;
+        xLabels += `<text x="${xAt(i)}" y="${H - 4}" text-anchor="middle" class="mono" font-size="10" fill="var(--text-muted)">${label}</text>`;
+      });
+
+      wrap.innerHTML = `
+        <div class="stock-chart-scroll" id="stockChartScroll">
+          <svg width="${W}" height="${H}" id="candleSvg" role="img" aria-label="종목 캔들차트">
+            ${grid}${candles}${xLabels}
+            <line id="candleCrosshair" x1="0" y1="${padT}" x2="0" y2="${padT + chartH}" stroke="var(--text-muted)" stroke-width="1" opacity="0"/>
+          </svg>
+        </div>
+      `;
+      const scrollEl = document.getElementById("stockChartScroll");
+      scrollEl.scrollLeft = scrollEl.scrollWidth;
+
+      const svg = document.getElementById("candleSvg");
+      const crosshair = document.getElementById("candleCrosshair");
+      svg.querySelectorAll(".hit").forEach(hit => {
+        hit.addEventListener("mouseenter", () => {
+          const b = bars[+hit.dataset.i];
+          crosshair.setAttribute("x1", xAt(+hit.dataset.i));
+          crosshair.setAttribute("x2", xAt(+hit.dataset.i));
+          crosshair.setAttribute("opacity", "1");
+          const dateLabel = isMinute ? `${b.date} ${b.time.slice(0, 2)}:${b.time.slice(2, 4)}` : b.date;
+          info.innerHTML = `<span class="t-date mono">${dateLabel}</span>` +
+            `<span class="mono">시 ${fmtPrice(b.open)} · 고 ${fmtPrice(b.high)} · 저 ${fmtPrice(b.low)} · 종 ${fmtPrice(b.close)} · 거래량 ${Math.round(b.volume).toLocaleString()}</span>`;
+        });
+      });
+      svg.addEventListener("mouseleave", () => { crosshair.setAttribute("opacity", "0"); info.innerHTML = ""; });
+    }
+
+    function renderChart() {
+      const entry = catalog[currentTicker];
+      let bars = entry[currentTf] || [];
+      if (!bars.length) {
+        const fallback = ["daily", "weekly", "monthly"].find(tf => entry[tf] && entry[tf].length);
+        if (fallback) { currentTf = fallback; bars = entry[fallback]; }
+      }
+      updateToggleState(entry);
+
+      if (!bars.length) {
+        wrap.innerHTML = `<div class="chart-empty">이 종목·타임프레임 데이터가 아직 없습니다.</div>`;
+        info.innerHTML = "";
+        return;
+      }
+      const isMinute = currentTf === "minute";
+      const displayBars = isMinute ? bars.slice(-1500) : bars;
+      renderCandles(displayBars, isMinute);
+      info.innerHTML = `<span class="mono">${currentTicker} ${entry.name} · ${TF_LABEL[currentTf]} · ${displayBars.length}봉</span>`;
+    }
+
+    searchInput.addEventListener("change", () => {
+      const resolved = resolveTicker(searchInput.value);
+      if (resolved) {
+        currentTicker = resolved;
+        searchInput.value = `${resolved} ${catalog[resolved].name}`;
+        renderChart();
+      }
+    });
+    tfToggle.querySelectorAll("button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        if (btn.disabled) return;
+        currentTf = btn.dataset.tf;
+        renderChart();
+      });
+    });
+
+    renderChart();
+  })();
 
   // ---- KPI row ----
   const kpiRow = document.getElementById("kpiRow");
