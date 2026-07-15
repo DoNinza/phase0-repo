@@ -10,6 +10,14 @@ JSONL을 읽기만 한다).
 때문이다(phase0.backtest.intraday_backtester 참고). 그래서 판정도
 더 단순한 3분기(표본부족/기각/통과)다.
 
+표본 문턱(정정, 2026-07-15): 일봉 G0의 "거래일 500일 이상"은 10년치
+데이터셋을 전제로 정한 값이라, 지금 1년치(약 255거래일) 데이터셋에는
+그대로 못 쓴다 — 이론상 최댓값(255)을 절대 못 넘어 항상 "표본부족"으로
+나온다. 대신 **그 백테스트에 실제로 존재하는 거래일 수 대비 비율**로
+문턱을 정한다(MIN_TRADING_DAY_COVERAGE) — 데이터가 몇 년으로 늘어나도
+같은 로직이 자동으로 맞게 스케일된다. 거래 건수 문턱(MIN_TRADES)은
+표본 정밀도(CLT) 문제라 데이터 기간과 무관하게 그대로 둔다.
+
 사용법: python scripts/run_intraday_backtest.py [--tickers T1,T2,...]
 """
 
@@ -28,7 +36,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 STORE_DIR = REPO_ROOT / "data" / "minute_bars_kiwoom"
 
 MIN_TRADES = 1000
-MIN_TRADING_DAYS = 500
+MIN_TRADING_DAY_COVERAGE = 0.5   # 데이터셋에 실제 존재하는 거래일의 절반 이상에서 신호가 나야 함
 
 
 def group_by_date(bars: list[MinuteBar]) -> dict[str, list[MinuteBar]]:
@@ -38,8 +46,8 @@ def group_by_date(bars: list[MinuteBar]) -> dict[str, list[MinuteBar]]:
     return by_date
 
 
-def verdict_for(e_trade: float, n_trades: int, n_trading_days: int) -> str:
-    if n_trades < MIN_TRADES or n_trading_days < MIN_TRADING_DAYS:
+def verdict_for(e_trade: float, n_trades: int, n_trading_days: int, min_trading_days: int) -> str:
+    if n_trades < MIN_TRADES or n_trading_days < min_trading_days:
         return "insufficient_sample"
     return "pass" if e_trade > 0 else "reject"
 
@@ -68,7 +76,16 @@ def main() -> None:
         by_date_by_ticker[ticker] = group_by_date(bars)
         print(f"  {ticker}: {len(bars)}봉, {len(by_date_by_ticker[ticker])}거래일")
 
-    print(f"\n사전 등록 격자 {len(PREREGISTERED_GRID)}개 조합\n")
+    all_available_dates: set[str] = set()
+    for by_date in by_date_by_ticker.values():
+        all_available_dates.update(by_date.keys())
+    min_trading_days = round(len(all_available_dates) * MIN_TRADING_DAY_COVERAGE)
+    print(
+        f"\n데이터셋 전체 거래일 {len(all_available_dates)}일 → 표본 문턱: "
+        f"거래 {MIN_TRADES}건 이상 & 거래일 {min_trading_days}일 이상"
+        f"(전체의 {MIN_TRADING_DAY_COVERAGE:.0%})"
+    )
+    print(f"사전 등록 격자 {len(PREREGISTERED_GRID)}개 조합\n")
     header = f"{'d':>8}{'f':>8}{'k_stop':>8}{'신호수':>8}{'거래일':>8}{'승률':>9}{'E_trade':>11}   판정"
     print(header)
     print("-" * len(header))
@@ -105,7 +122,7 @@ def main() -> None:
         L = -sum(losses) / len(losses) if losses else 0.0
         e_trade = p * W - (1 - p) * L - cost_base
         n_trading_days = len(signal_dates)
-        verdict = verdict_for(e_trade, n, n_trading_days)
+        verdict = verdict_for(e_trade, n, n_trading_days, min_trading_days)
 
         print(
             f"{d * 100:>7.2f}%{f:>8.2f}{k_stop:>8.2f}{n:>8}{n_trading_days:>8}"
