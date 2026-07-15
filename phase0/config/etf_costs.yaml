@@ -1,0 +1,75 @@
+# etf_costs.yaml — 국내 주식형 ETF 섹터 비용 파라미터 (2026-07-15, costs.yaml/us_costs.yaml과 분리)
+#
+# 단위: 소수(0.01=1%), 왕복(매수+매도) 기준.
+#
+# 핵심 차이(실측 확인, 근거는 README "논점 전환: ETF 비용구조" 참고):
+# 국내 주식형 ETF는 매도 시 증권거래세(0.05%)+농어촌특별세(0.15%) = 0.20%가
+# **전액 면제**되고, 매매차익 자체도 비과세다(자산운용사가 개별 구성종목을
+# 매매할 때 이미 냈다는 논리). 그래서 costs.yaml(개별주식) 대비 Base가
+# 정확히 0.20%p 낮다.
+
+meta:
+  last_verified: "2026-07-15"
+  next_review_due: "2027-01-01"
+  market: "KOSPI 상장 국내 주식형 ETF (코스피200 추종·섹터/테마)"
+  effective_from: "2026-07-15"
+  source: "ETF 세제 공식 안내(거래세 면제·비과세, 다수 자산운용사 공식 가이드 일치) — 위탁수수료·슬리피지는 개별주식 가정 승계, 실계좌 미확인"
+
+# ---------- Base 구성 요소 ----------
+components:
+  brokerage_commission_roundtrip:
+    value: 0.000281054
+    tag: "확인된 사실(가정 승계)"
+    note: >-
+      KOSPI 개별주식 costs.yaml의 실계좌 확인값(0.0140527% 편도)을 그대로
+      가정 — ETF도 동일 수수료율 적용이 일반적이나 사용자 실계좌로 아직
+      별도 확인되지 않았다.
+
+  slippage_buy:
+    value: 0.0005
+    tag: "초기 가정"
+    note: "개별주식과 동일 가정 승계 — 섀도우 테스트 후 확정. ETF는 코스피200 추종형처럼 유동성이 매우 높은 경우 이보다 낮을 가능성, 소형 섹터 ETF는 더 높을 가능성 둘 다 있음(정직한 불확실성)."
+
+  slippage_sell_normal:
+    value: 0.0010
+    tag: "초기 가정"
+    note: "섀도우 테스트 후 확정 (정상 청산 기준, 손절 청산은 별도 항목)"
+
+  exchange_fees:
+    value: 0.000073
+    tag: "확인된 사실(가정 승계)"
+    note: "KRX/예탁결제원 유관기관제비용 — 개별주식과 공통 요율 가정"
+
+# ---------- Base 합산에서 제외되는 조건부 항목 ----------
+conditional:
+  stoploss_market_extra:
+    value: 0.0010
+    tag: "초기 가정"
+    note: "손절 시장가 추가분 — 개별주식과 동일 방법론, Base 왕복 비용에는 포함하지 않음"
+
+# ---------- Base에서 구조적으로 제외 (개별주식과의 핵심 차이) ----------
+excluded_from_base:
+  transaction_tax_and_special_tax:
+    note: >-
+      국내 주식형 ETF는 매도 시 증권거래세(0.05%)+농어촌특별세(0.15%)가
+      전액 면제되고 매매차익도 비과세다 — costs.yaml(개별주식)의 해당
+      두 항목(합 0.20%)이 여기서는 아예 존재하지 않는다. 채권·원자재·
+      파생형 ETF는 과세 방식이 다르므로(기타자산 분류, 배당소득세 15.4%)
+      이 비용모델은 국내 주식형 ETF에만 적용한다.
+
+# ---------- 판정용 시나리오 ----------
+scenarios:
+  optimistic:
+    override_total: 0.0013
+    usage: "판정 사용 금지 — 민감도 방향 참고 전용"
+  base:
+    multiplier: 1.0
+    usage: "1차 판정 (G0~G2 기준)"
+  conservative:
+    multiplier: 1.3
+    usage: "G3 필수 통과 기준 — 손익분기 비용 ≥ Base×1.3"
+  stress:
+    multiplier: 2.0
+    usage: "우수 등급 참고"
+  realized:
+    usage: "운용 중 실측값으로 갱신"
