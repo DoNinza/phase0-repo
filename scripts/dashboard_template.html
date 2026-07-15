@@ -305,6 +305,12 @@
   </section>
 
   <section class="panel">
+    <h2>미국주식 분봉 축적 현황</h2>
+    <p class="panel-sub">yfinance 5분봉, 60일 롤링 윈도우 — GDR 페이퍼 트레이딩과는 별도인 데이터 축적 파이프라인</p>
+    <div id="usMinuteBarsWrap"></div>
+  </section>
+
+  <section class="panel">
     <h2>전체 거래 기록</h2>
     <p class="panel-sub">최신순</p>
     <div class="table-scroll">
@@ -512,6 +518,35 @@
         </div>
       `;
     }).join("");
+  }
+
+  // ---- US minute bar accumulation status ----
+  const usWrap = document.getElementById("usMinuteBarsWrap");
+  const usData = DATA.us_minute_bars || { heartbeat: null, tickers: [] };
+  if (!usData.tickers.length) {
+    usWrap.innerHTML = `<p class="empty-note">아직 수집된 미국 분봉이 없습니다.</p>`;
+  } else {
+    const hbText = usData.heartbeat
+      ? `마지막 수집: ${usData.heartbeat.replace("T", " ")}`
+      : "하트비트 없음";
+    usWrap.innerHTML = `
+      <p class="panel-sub" style="margin:0 0 12px;">${usData.tickers.length}종목 추적 중 · ${hbText}</p>
+      <div class="table-scroll">
+        <table class="history">
+          <thead><tr><th>종목</th><th>봉 개수</th><th>수집 기간</th><th>일수</th></tr></thead>
+          <tbody>
+            ${usData.tickers.map(t => `
+              <tr>
+                <td class="mono">${t.ticker}</td>
+                <td class="mono">${t.bar_count.toLocaleString()}</td>
+                <td class="mono">${t.earliest_date} ~ ${t.latest_date}</td>
+                <td class="mono">${t.days_covered}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
   }
 
   // ---- history table ----

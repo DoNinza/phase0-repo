@@ -16,6 +16,7 @@ import json
 import sys
 from pathlib import Path
 
+from phase0.data.minute_bar_store import load_bars
 from phase0.paper.trade_log import (
     consecutive_losses, current_drawdown, daily_return, load_entries, monthly_return,
     weekly_return,
@@ -27,6 +28,32 @@ LOG_PATH = REPO_ROOT / "data" / "paper_trading" / "gdr_trades.jsonl"
 HEARTBEAT_PATH = REPO_ROOT / "data" / "paper_trading" / "heartbeat.txt"
 TEMPLATE_PATH = REPO_ROOT / "scripts" / "dashboard_template.html"
 DEFAULT_OUT_PATH = REPO_ROOT / "data" / "paper_trading" / "dashboard.html"
+
+US_MINUTE_BARS_DIR = REPO_ROOT / "data" / "minute_bars_us"
+US_MINUTE_HEARTBEAT_PATH = US_MINUTE_BARS_DIR / "heartbeat.txt"
+
+
+def build_us_minute_bar_status() -> dict:
+    """미국주식 5분봉 축적 현황(collect_minute_bars_us.py가 쌓는 데이터) 요약."""
+    tickers = []
+    if US_MINUTE_BARS_DIR.exists():
+        for path in sorted(US_MINUTE_BARS_DIR.glob("*.jsonl")):
+            bars = load_bars(path)
+            if not bars:
+                continue
+            dates = sorted({b.date for b in bars})
+            tickers.append({
+                "ticker": path.stem,
+                "bar_count": len(bars),
+                "earliest_date": dates[0],
+                "latest_date": dates[-1],
+                "days_covered": len(dates),
+            })
+    heartbeat = (
+        US_MINUTE_HEARTBEAT_PATH.read_text(encoding="utf-8").strip()
+        if US_MINUTE_HEARTBEAT_PATH.exists() else None
+    )
+    return {"heartbeat": heartbeat, "tickers": tickers}
 
 
 def build_payload() -> dict:
@@ -82,6 +109,7 @@ def build_payload() -> dict:
              "pnl_pct": (e.pnl_pct * 100 if e.pnl_pct is not None else None)}
             for e in sorted(resolved, key=lambda x: x.date, reverse=True)
         ],
+        "us_minute_bars": build_us_minute_bar_status(),
     }
 
 
@@ -98,6 +126,7 @@ def main() -> None:
     print(f"대시보드 생성 완료: {out_path}")
     print(f"  총 거래(해소): {payload['total_trades']}, 진행중: {payload['pending_count']}, "
           f"서킷브레이커: {payload['halt_status']}")
+    print(f"  미국 분봉 추적 종목: {len(payload['us_minute_bars']['tickers'])}개")
 
 
 if __name__ == "__main__":

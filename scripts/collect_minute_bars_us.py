@@ -20,6 +20,7 @@ phase0.data.minute_bar_store의 MinuteBar/append_bars/store_path를 KR
 
 from __future__ import annotations
 
+import datetime as dt
 import sys
 from pathlib import Path
 
@@ -30,9 +31,15 @@ from phase0.data.us_candidates import DEFAULT_CANDIDATES
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 STORE_DIR = REPO_ROOT / "data" / "minute_bars_us"
+HEARTBEAT_PATH = STORE_DIR / "heartbeat.txt"
 
 INTERVAL = "5m"
 PERIOD = "60d"
+
+
+def write_heartbeat() -> None:
+    STORE_DIR.mkdir(parents=True, exist_ok=True)
+    HEARTBEAT_PATH.write_text(dt.datetime.now().isoformat(), encoding="utf-8")
 
 
 def fetch_5m(ticker: str) -> pd.DataFrame:
@@ -78,6 +85,8 @@ def main() -> None:
         path = store_path(STORE_DIR, ticker)
         append_bars(path, bars)
         print(f"  {ticker}: 응답 {len(bars)}봉 확인 (신규분만 실제 저장, 기존 중복은 자동 제외)")
+
+    write_heartbeat()
 
 
 if __name__ == "__main__":
