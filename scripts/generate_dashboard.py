@@ -14,6 +14,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import sys
+import time
 from pathlib import Path
 
 _REPO_ROOT_FOR_IMPORT = Path(__file__).resolve().parents[1]
@@ -68,6 +69,39 @@ STRATEGIES = [
 
 US_MINUTE_BARS_DIR = REPO_ROOT / "data" / "minute_bars_us"
 US_MINUTE_HEARTBEAT_PATH = US_MINUTE_BARS_DIR / "heartbeat.txt"
+
+# B6 "데이터·시스템" 파이프라인 상태 표용 경로들. 각 하트비트 경로는 실제로
+# 그 파일을 쓰는 수집 스크립트를 읽어서 확인한 값이다(추측 금지):
+# collect_daily_bars_watchlist.py / collect_minute_bars.py /
+# collect_minute_bars_kiwoom.py의 HEARTBEAT_PATH, 그리고 위 LOG_PATH/
+# ETF_LOG_PATH와 짝을 이루는 paper_trade_gdr.py / paper_trade_etf_gdr.py의
+# HEARTBEAT_PATH.
+DAILY_BARS_HEARTBEAT_PATH = DAILY_BARS_DIR / "heartbeat.txt"
+MINUTE_BARS_DIR = REPO_ROOT / "data" / "minute_bars"
+MINUTE_BARS_HEARTBEAT_PATH = MINUTE_BARS_DIR / "heartbeat.txt"
+KIWOOM_MINUTE_BARS_DIR = REPO_ROOT / "data" / "minute_bars_kiwoom"
+KIWOOM_MINUTE_HEARTBEAT_PATH = KIWOOM_MINUTE_BARS_DIR / "heartbeat.txt"
+ETF_PAPER_TRADING_DIR = REPO_ROOT / "data" / "paper_trading_etf"
+ETF_HEARTBEAT_PATH = ETF_PAPER_TRADING_DIR / "heartbeat.txt"
+
+# 상단 헤더 하트비트 점(dashboard_template.html)이 쓰는 "96시간 지나면
+# 회색(stale)" 기준을 그대로 재사용한다 — 새 임계값을 발명하지 않는다.
+STALE_HOURS_THRESHOLD = 96
+
+SYSTEM_HEALTH_PIPELINES = [
+    {"key": "daily_bars", "label": "워치리스트 일봉 캐시",
+     "dir_path": DAILY_BARS_DIR, "heartbeat_path": DAILY_BARS_HEARTBEAT_PATH},
+    {"key": "minute_bars", "label": "국내 분봉(KIS, 당일)",
+     "dir_path": MINUTE_BARS_DIR, "heartbeat_path": MINUTE_BARS_HEARTBEAT_PATH},
+    {"key": "minute_bars_kiwoom", "label": "국내 분봉(키움 백필)",
+     "dir_path": KIWOOM_MINUTE_BARS_DIR, "heartbeat_path": KIWOOM_MINUTE_HEARTBEAT_PATH},
+    {"key": "minute_bars_us", "label": "미국 분봉(yfinance)",
+     "dir_path": US_MINUTE_BARS_DIR, "heartbeat_path": US_MINUTE_HEARTBEAT_PATH},
+    {"key": "paper_trading", "label": "페이퍼 트레이딩(GDR-KR)",
+     "dir_path": LOG_PATH.parent, "heartbeat_path": HEARTBEAT_PATH},
+    {"key": "paper_trading_etf", "label": "페이퍼 트레이딩(GDR-ETF)",
+     "dir_path": ETF_PAPER_TRADING_DIR, "heartbeat_path": ETF_HEARTBEAT_PATH},
+]
 
 TR_ID_BALANCE = {"prod": "TTTC8434R", "vps": "VTTC8434R"}
 
@@ -285,6 +319,101 @@ def build_us_minute_bar_status() -> dict:
     return {"heartbeat": heartbeat, "tickers": tickers}
 
 
+def _read_last_nonempty_line(path: Path, chunk_size: int = 8192) -> str | None:
+    """파일 끝에서 청크 단위로만 읽어 마지막으로 비어있지 않은 줄을 얻는다.
+
+    data/minute_bars_kiwoom/*.jsonl은 종목당 최대 수만 줄(5분봉 x 최대
+    1년치)이라 build_us_minute_bar_status()처럼 load_bars()로 전체를
+    파싱하면 이 상태 표 하나 만드는 데만 너무 느려진다 — 필요한 건
+    "가장 최근 날짜" 하나뿐이므로 끝에서부터 몇 KB만 읽는다(줄바꿈이
+    하나라도 나오면 그걸로 충분, 극단적으로 긴 한 줄짜리 파일이면 파일
+    전체까지 확장해서 읽는다).
+    """
+    try:
+        size = path.stat().st_size
+    except OSError:
+        return None
+    if size == 0:
+        return None
+    with path.open("rb") as f:
+        data = b""
+        pos = size
+        while True:
+            step = min(chunk_size, pos)
+            pos -= step
+            f.seek(pos)
+            data = f.read(step) + data
+            if data.rstrip(b"\n").count(b"\n") >= 1 or pos == 0:
+                break
+    stripped = data.rstrip(b"\n")
+    last_line = stripped.rsplit(b"\n", 1)[-1]
+    text = last_line.decode("utf-8", errors="replace").strip()
+    return text or None
+
+
+def _latest_date_in_file(path: Path) -> str | None:
+    line = _read_last_nonempty_line(path)
+    if not line:
+        return None
+    try:
+        return json.loads(line).get("date")
+    except (json.JSONDecodeError, AttributeError):
+        return None
+
+
+def _pipeline_health(key: str, label: str, dir_path: Path, heartbeat_path: Path) -> dict:
+    """파이프라인 하나의 요약 상태(B6) — 원본 데이터는 절대 담지 않고
+    집계된 개수/날짜/용량만 담는다. Path.stat()과 각 파일의 마지막 줄만
+    읽어(전체 파싱 없이) minute_bars_kiwoom처럼 큰 디렉터리에서도 빠르다.
+    디렉터리가 아직 없으면 에러 대신 "미가동"으로 보고한다.
+    """
+    if not dir_path.exists():
+        return {
+            "key": key, "label": label, "available": False,
+            "heartbeat": None, "heartbeat_age_hours": None, "is_stale": True,
+            "file_count": 0, "latest_date": None, "dir_size_bytes": 0,
+        }
+
+    files = sorted(dir_path.glob("*.jsonl"))
+    latest_date = None
+    for f in files:
+        d = _latest_date_in_file(f)
+        if d and (latest_date is None or d > latest_date):
+            latest_date = d
+
+    dir_size_bytes = sum(f.stat().st_size for f in dir_path.glob("*") if f.is_file())
+
+    heartbeat = None
+    heartbeat_age_hours = None
+    if heartbeat_path.exists():
+        raw = heartbeat_path.read_text(encoding="utf-8").strip()
+        try:
+            heartbeat_age_hours = (dt.datetime.now() - dt.datetime.fromisoformat(raw)).total_seconds() / 3600
+            heartbeat = raw
+        except ValueError:
+            heartbeat = None   # 하트비트 파일이 있어도 파싱 안 되면 "없음"과 동일 취급
+
+    is_stale = heartbeat_age_hours is None or heartbeat_age_hours > STALE_HOURS_THRESHOLD
+
+    return {
+        "key": key, "label": label, "available": True,
+        "heartbeat": heartbeat, "heartbeat_age_hours": heartbeat_age_hours,
+        "is_stale": is_stale, "file_count": len(files),
+        "latest_date": latest_date, "dir_size_bytes": dir_size_bytes,
+    }
+
+
+def build_system_health() -> dict:
+    """B6: 데이터·시스템 상태 — 가짜 CPU/RAM 게이지 대신 실측 가능한 것만.
+
+    파이프라인별 하트비트 나이·축적 파일 수·최신 날짜·용량을 집계한다.
+    generation_timing은 여기서 채우지 않는다 — 이 함수 자신의 실행시간은
+    스스로 잴 수 없으므로(다른 build_*()들처럼 부작용 없는 순수 함수로
+    유지하기 위해) main()이 build_payload() 전체를 감싸 잰 뒤 주입한다.
+    """
+    return {"pipelines": [_pipeline_health(**p) for p in SYSTEM_HEALTH_PIPELINES]}
+
+
 def build_strategy_data() -> dict:
     """전략별 페이퍼 트레이딩 현황(읽기전용) + 손익달력용 통합 거래 목록.
 
@@ -421,6 +550,7 @@ def build_payload() -> dict:
             for e in sorted(resolved, key=lambda x: x.date, reverse=True)
         ],
         "us_minute_bars": build_us_minute_bar_status(),
+        "system_health": build_system_health(),
         "account": (account := build_account_status()),
         "chart_catalog": build_chart_catalog(account["holdings"] if account["available"] else []),
         "strategy_data": build_strategy_data(),
@@ -431,7 +561,15 @@ def build_payload() -> dict:
 
 def main() -> None:
     out_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_OUT_PATH
+    t0 = time.perf_counter()
     payload = build_payload()
+    # build_system_health()는 다른 build_*()들처럼 부작용 없는 순수 함수로
+    # 유지한다 — 자기 자신의 실행시간을 스스로 잴 수 없으므로, 전체
+    # build_payload() 호출을 감싸 잰 뒤 여기서 주입한다(B6 "최근 생성
+    # 소요시간" 표시용).
+    payload["system_health"]["generation_timing"] = {
+        "total_seconds": round(time.perf_counter() - t0, 3),
+    }
 
     # 자산 곡선(B4) 스냅샷 append — payload["account"]는 build_payload() 안에서
     # build_account_status()로 이미 한 번 조회한 값이라 여기서 KIS를 다시
@@ -479,6 +617,11 @@ def main() -> None:
           f"sortino={rm['sortino']}, VaR95={rm['var95_pct']}")
     ec = payload["equity_curve"]
     print(f"  자산 곡선: 일별 스냅샷 {len(ec['points'])}건(전체 누적 {ec['n_total_snapshots']}건)")
+    sh = payload["system_health"]
+    n_available = sum(1 for p in sh["pipelines"] if p["available"])
+    n_stale = sum(1 for p in sh["pipelines"] if p["available"] and p["is_stale"])
+    print(f"  시스템 상태: 파이프라인 {len(sh['pipelines'])}개 중 가동 {n_available}개"
+          f"(지연 {n_stale}개), 생성 소요시간 {sh['generation_timing']['total_seconds']:.2f}초")
 
 
 if __name__ == "__main__":

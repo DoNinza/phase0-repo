@@ -543,6 +543,11 @@
 
   <div class="tab-panel" data-tab="system">
     <section class="panel">
+      <h2>파이프라인 상태</h2>
+      <p class="panel-sub" id="systemHealthSub">실측 하트비트·파일 개수·용량만 표시(가상 CPU/RAM 게이지 없음)</p>
+      <div id="systemHealthWrap"></div>
+    </section>
+    <section class="panel">
       <h2>미국주식 분봉 축적 현황</h2>
       <p class="panel-sub">yfinance 5분봉, 60일 롤링 윈도우 — GDR 페이퍼 트레이딩과는 별도인 데이터 축적 파이프라인</p>
       <div id="usMinuteBarsWrap"></div>
@@ -1385,6 +1390,70 @@
       `;
     }).join("");
   }
+
+  // ---- system pipeline health (B6, "데이터·시스템" 탭) ----
+  function fmtBytes(n) {
+    if (n === null || n === undefined) return "—";
+    if (n < 1024) return `${n}B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)}KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)}MB`;
+  }
+  function fmtHeartbeatAge(hours) {
+    if (hours === null || hours === undefined) return "정보 없음";
+    if (hours < 1) return "1시간 이내";
+    return `${Math.floor(hours)}시간 전`;
+  }
+  (function () {
+    const shData = DATA.system_health || { pipelines: [], generation_timing: null };
+    const shSub = document.getElementById("systemHealthSub");
+    const genSec = shData.generation_timing ? shData.generation_timing.total_seconds : null;
+    shSub.textContent = "실측 하트비트·파일 개수·용량만 표시(가상 CPU/RAM 게이지 없음)"
+      + (genSec !== null ? ` · 최근 생성 소요시간: ${genSec.toFixed(2)}초` : "");
+
+    const shWrap = document.getElementById("systemHealthWrap");
+    if (!shData.pipelines.length) {
+      shWrap.innerHTML = `<p class="empty-note">파이프라인 정보가 없습니다.</p>`;
+      return;
+    }
+    shWrap.innerHTML = `
+      <div class="table-scroll">
+        <table class="history">
+          <thead>
+            <tr><th>파이프라인</th><th>마지막 실행</th><th>파일 수</th><th>최신 데이터</th><th>용량</th><th>상태</th></tr>
+          </thead>
+          <tbody>
+            ${shData.pipelines.map(p => {
+              if (!p.available) {
+                return `
+                  <tr>
+                    <td>${p.label}</td>
+                    <td class="mono">—</td>
+                    <td class="mono">—</td>
+                    <td class="mono">—</td>
+                    <td class="mono">—</td>
+                    <td><span class="heartbeat-dot stale" title="미가동"></span> 미가동</td>
+                  </tr>
+                `;
+              }
+              const dotClass = p.is_stale ? "heartbeat-dot stale" : "heartbeat-dot";
+              const statusLabel = p.is_stale ? "지연" : "정상";
+              const hbTitle = p.heartbeat ? p.heartbeat.replace("T", " ") : "하트비트 없음";
+              return `
+                <tr>
+                  <td>${p.label}</td>
+                  <td class="mono">${fmtHeartbeatAge(p.heartbeat_age_hours)}</td>
+                  <td class="mono">${p.file_count.toLocaleString()}</td>
+                  <td class="mono">${p.latest_date || "—"}</td>
+                  <td class="mono">${fmtBytes(p.dir_size_bytes)}</td>
+                  <td><span class="${dotClass}" title="${hbTitle}"></span> ${statusLabel}</td>
+                </tr>
+              `;
+            }).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  })();
 
   // ---- US minute bar accumulation status ----
   const usWrap = document.getElementById("usMinuteBarsWrap");

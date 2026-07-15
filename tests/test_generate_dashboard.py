@@ -1,3 +1,6 @@
+import datetime as dt
+import json
+
 import pytest
 
 import scripts.generate_dashboard as gd
@@ -88,3 +91,101 @@ def test_build_equity_curve_respects_embedded_limit(tmp_path, monkeypatch):
     # 한도를 넘으면 가장 최근 것들만 남아야 한다(과거가 아니라 최신을 유지)
     assert curve["points"][-1]["date"] == "20260710"
     assert curve["points"][0]["date"] == "20260706"
+
+
+def test_build_system_health_reports_missing_dir_as_unavailable(tmp_path, monkeypatch):
+    missing_dir = tmp_path / "does_not_exist_yet"
+    monkeypatch.setattr(gd, "SYSTEM_HEALTH_PIPELINES", [
+        {"key": "ghost", "label": "미가동 파이프라인",
+         "dir_path": missing_dir, "heartbeat_path": missing_dir / "heartbeat.txt"},
+    ])
+
+    health = gd.build_system_health()
+    assert len(health["pipelines"]) == 1
+    p = health["pipelines"][0]
+    assert p["available"] is False
+    assert p["heartbeat"] is None
+    assert p["file_count"] == 0
+    assert p["latest_date"] is None
+    assert p["dir_size_bytes"] == 0
+    assert p["is_stale"] is True   # 미가동은 신선할 수 없다
+
+
+def test_build_system_health_computes_freshness_and_latest_date(tmp_path, monkeypatch):
+    pipeline_dir = tmp_path / "fake_pipeline"
+    pipeline_dir.mkdir()
+
+    # 종목 2개, 각각 여러 줄 — 마지막 줄의 date만 봐야 한다(load_bars 전체
+    # 파싱 없이 last-line만 읽는지 확인).
+    (pipeline_dir / "AAA.jsonl").write_text(
+        "\n".join(json.dumps({"date": d, "time": "090000", "open": 1, "high": 1,
+                               "low": 1, "close": 1, "volume": 1})
+                  for d in ["20260710", "20260711", "20260712"]) + "\n",
+        encoding="utf-8",
+    )
+    (pipeline_dir / "BBB.jsonl").write_text(
+        "\n".join(json.dumps({"date": d, "time": "090000", "open": 1, "high": 1,
+                               "low": 1, "close": 1, "volume": 1})
+                  for d in ["20260701", "20260714"]) + "\n",
+        encoding="utf-8",
+    )
+
+    heartbeat_path = pipeline_dir / "heartbeat.txt"
+    fresh_ts = (dt.datetime.now() - dt.timedelta(hours=2)).isoformat()
+    heartbeat_path.write_text(fresh_ts, encoding="utf-8")
+
+    monkeypatch.setattr(gd, "SYSTEM_HEALTH_PIPELINES", [
+        {"key": "fake", "label": "가짜 파이프라인",
+         "dir_path": pipeline_dir, "heartbeat_path": heartbeat_path},
+    ])
+
+    health = gd.build_system_health()
+    p = health["pipelines"][0]
+    assert p["available"] is True
+    assert p["file_count"] == 2
+    assert p["latest_date"] == "20260714"   # 두 파일의 마지막 줄 중 최신
+    assert p["heartbeat"] == fresh_ts
+    assert p["heartbeat_age_hours"] == pytest.approx(2.0, abs=0.05)
+    assert p["is_stale"] is False   # 2시간 전 < 96시간 임계값
+    assert p["dir_size_bytes"] > 0
+
+
+def test_build_system_health_stale_heartbeat_flagged(tmp_path, monkeypatch):
+    pipeline_dir = tmp_path / "stale_pipeline"
+    pipeline_dir.mkdir()
+    (pipeline_dir / "AAA.jsonl").write_text(
+        json.dumps({"date": "20260601", "time": "090000", "open": 1, "high": 1,
+                     "low": 1, "close": 1, "volume": 1}) + "\n",
+        encoding="utf-8",
+    )
+    heartbeat_path = pipeline_dir / "heartbeat.txt"
+    old_ts = (dt.datetime.now() - dt.timedelta(hours=200)).isoformat()
+    heartbeat_path.write_text(old_ts, encoding="utf-8")
+
+    monkeypatch.setattr(gd, "SYSTEM_HEALTH_PIPELINES", [
+        {"key": "stale", "label": "오래된 파이프라인",
+         "dir_path": pipeline_dir, "heartbeat_path": heartbeat_path},
+    ])
+
+    health = gd.build_system_health()
+    p = health["pipelines"][0]
+    assert p["is_stale"] is True   # 200시간 전 > 96시간 임계값
+
+
+def test_read_last_nonempty_line_handles_small_and_missing_files(tmp_path):
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("", encoding="utf-8")
+    assert gd._read_last_nonempty_line(empty) is None
+    assert gd._read_last_nonempty_line(tmp_path / "nope.jsonl") is None
+
+    f = tmp_path / "small.jsonl"
+    f.write_text('{"date": "20260101"}\n{"date": "20260102"}\n', encoding="utf-8")
+    assert gd._read_last_nonempty_line(f) == '{"date": "20260102"}'
+
+
+def test_read_last_nonempty_line_across_chunk_boundary(tmp_path):
+    # chunk_size를 작게 줘서 "여러 청크를 거슬러 올라가야 줄바꿈을 찾는"
+    # 경로(긴 줄 하나짜리 파일 등)도 죽지 않고 동작하는지 확인.
+    f = tmp_path / "big.jsonl"
+    f.write_text('{"date": "20260101"}\n' + ("x" * 50) + '\n{"date": "20260228"}\n', encoding="utf-8")
+    assert gd._read_last_nonempty_line(f, chunk_size=8) == '{"date": "20260228"}'
