@@ -16,6 +16,9 @@ import json
 import sys
 from pathlib import Path
 
+import requests
+
+from phase0.config.kis_credentials import CredentialsMissingError, load_credentials
 from phase0.data.minute_bar_store import load_bars
 from phase0.paper.trade_log import (
     consecutive_losses, current_drawdown, daily_return, load_entries, monthly_return,
@@ -31,6 +34,87 @@ DEFAULT_OUT_PATH = REPO_ROOT / "data" / "paper_trading" / "dashboard.html"
 
 US_MINUTE_BARS_DIR = REPO_ROOT / "data" / "minute_bars_us"
 US_MINUTE_HEARTBEAT_PATH = US_MINUTE_BARS_DIR / "heartbeat.txt"
+
+TR_ID_BALANCE = {"prod": "TTTC8434R", "vps": "VTTC8434R"}
+
+
+def _to_float(value, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def build_account_status() -> dict:
+    """실계좌 잔고(읽기 전용 조회) — KIS 장애·인증정보 없음·레이트리밋 등으로
+    실패해도 대시보드 전체 생성은 막지 않도록 항상 dict를 반환한다."""
+    try:
+        creds = load_credentials()
+    except CredentialsMissingError:
+        return {"available": False, "error": "인증정보 없음"}
+
+    try:
+        token_resp = requests.post(
+            f"{creds.base_url}/oauth2/tokenP",
+            headers={"content-type": "application/json"},
+            json={"grant_type": "client_credentials", "appkey": creds.app_key, "appsecret": creds.app_secret},
+            timeout=10,
+        )
+        token_resp.raise_for_status()
+        token = token_resp.json()["access_token"]
+
+        resp = requests.get(
+            f"{creds.base_url}/uapi/domestic-stock/v1/trading/inquire-balance",
+            headers={
+                "content-type": "application/json",
+                "authorization": f"Bearer {token}",
+                "appkey": creds.app_key,
+                "appsecret": creds.app_secret,
+                "tr_id": TR_ID_BALANCE[creds.env],
+                "custtype": "P",
+            },
+            params={
+                "CANO": creds.account_no, "ACNT_PRDT_CD": creds.account_product_cd,
+                "AFHR_FLPR_YN": "N", "OFL_YN": "", "INQR_DVSN": "02", "UNPR_DVSN": "01",
+                "FUND_STTL_ICLD_YN": "N", "FNCG_AMT_AUTO_RDPT_YN": "N", "PRCS_DVSN": "01",
+                "CTX_AREA_FK100": "", "CTX_AREA_NK100": "",
+            },
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except Exception as exc:
+        return {"available": False, "error": f"{type(exc).__name__}"}
+
+    if data.get("rt_cd") != "0":
+        return {"available": False, "error": data.get("msg1", "조회 실패").strip()}
+
+    summary = (data.get("output2") or [{}])[0]
+    holdings = [
+        {
+            "ticker": h.get("pdno", ""),
+            "name": h.get("prdt_name", ""),
+            "qty": int(_to_float(h.get("hldg_qty"))),
+            "avg_price": _to_float(h.get("pchs_avg_pric")),
+            "cur_price": _to_float(h.get("prpr")),
+            "eval_amount": _to_float(h.get("evlu_amt")),
+            "pnl_pct": _to_float(h.get("evlu_pfls_rt")),
+        }
+        for h in data.get("output1", []) if int(_to_float(h.get("hldg_qty"))) > 0
+    ]
+    holdings.sort(key=lambda h: h["eval_amount"], reverse=True)
+
+    return {
+        "available": True,
+        "env": creds.env,
+        "deposit": _to_float(summary.get("dnca_tot_amt")),
+        "stock_eval_amount": _to_float(summary.get("scts_evlu_amt")),
+        "total_eval_amount": _to_float(summary.get("tot_evlu_amt")),
+        "purchase_amount": _to_float(summary.get("pchs_amt_smtl_amt")),
+        "pnl_amount": _to_float(summary.get("evlu_pfls_smtl_amt")),
+        "pnl_rate": _to_float(summary.get("asst_icdc_erng_rt")),
+        "holdings": holdings,
+    }
 
 
 def build_us_minute_bar_status() -> dict:
@@ -110,6 +194,7 @@ def build_payload() -> dict:
             for e in sorted(resolved, key=lambda x: x.date, reverse=True)
         ],
         "us_minute_bars": build_us_minute_bar_status(),
+        "account": build_account_status(),
     }
 
 
@@ -127,6 +212,12 @@ def main() -> None:
     print(f"  총 거래(해소): {payload['total_trades']}, 진행중: {payload['pending_count']}, "
           f"서킷브레이커: {payload['halt_status']}")
     print(f"  미국 분봉 추적 종목: {len(payload['us_minute_bars']['tickers'])}개")
+    acct = payload["account"]
+    if acct["available"]:
+        print(f"  실계좌({acct['env']}): 총평가금액 {acct['total_eval_amount']:,.0f}원, "
+              f"보유종목 {len(acct['holdings'])}건")
+    else:
+        print(f"  실계좌 조회 실패: {acct['error']}")
 
 
 if __name__ == "__main__":
