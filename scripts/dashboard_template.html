@@ -1,0 +1,539 @@
+<title>GDR 페이퍼 트레이딩</title>
+<style>
+  :root {
+    --bg: #F6F4EF;
+    --surface: #FFFFFF;
+    --surface-2: #FBF9F4;
+    --border: #E4DFD3;
+    --text-primary: #1A1D23;
+    --text-secondary: #565F6E;
+    --text-muted: #8B93A0;
+    --accent: #B8842E;
+    --accent-soft: rgba(184,132,46,0.12);
+    --gain: #C22C31;
+    --gain-soft: rgba(194,44,49,0.10);
+    --loss: #2054C7;
+    --loss-soft: rgba(32,84,199,0.10);
+    --status-good: #16874A;
+    --status-warn: #B4650A;
+    --status-idle: #8B93A0;
+    --shadow: 0 1px 2px rgba(20,20,20,0.04), 0 8px 24px rgba(20,20,20,0.05);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0A0D12;
+      --surface: #12161D;
+      --surface-2: #171D26;
+      --border: #262E3B;
+      --text-primary: #ECEFF4;
+      --text-secondary: #93A0B4;
+      --text-muted: #5C6678;
+      --accent: #D9A441;
+      --accent-soft: rgba(217,164,65,0.14);
+      --gain: #E5484D;
+      --gain-soft: rgba(229,72,77,0.14);
+      --loss: #4C8DFF;
+      --loss-soft: rgba(76,141,255,0.14);
+      --status-good: #34D399;
+      --status-warn: #F5A623;
+      --status-idle: #5C6678;
+      --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px rgba(0,0,0,0.35);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0A0D12; --surface: #12161D; --surface-2: #171D26; --border: #262E3B;
+    --text-primary: #ECEFF4; --text-secondary: #93A0B4; --text-muted: #5C6678;
+    --accent: #D9A441; --accent-soft: rgba(217,164,65,0.14);
+    --gain: #E5484D; --gain-soft: rgba(229,72,77,0.14);
+    --loss: #4C8DFF; --loss-soft: rgba(76,141,255,0.14);
+    --status-good: #34D399; --status-warn: #F5A623; --status-idle: #5C6678;
+    --shadow: 0 1px 2px rgba(0,0,0,0.3), 0 8px 28px rgba(0,0,0,0.35);
+  }
+  :root[data-theme="light"] {
+    --bg: #F6F4EF; --surface: #FFFFFF; --surface-2: #FBF9F4; --border: #E4DFD3;
+    --text-primary: #1A1D23; --text-secondary: #565F6E; --text-muted: #8B93A0;
+    --accent: #B8842E; --accent-soft: rgba(184,132,46,0.12);
+    --gain: #C22C31; --gain-soft: rgba(194,44,49,0.10);
+    --loss: #2054C7; --loss-soft: rgba(32,84,199,0.10);
+    --status-good: #16874A; --status-warn: #B4650A; --status-idle: #8B93A0;
+    --shadow: 0 1px 2px rgba(20,20,20,0.04), 0 8px 24px rgba(20,20,20,0.05);
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: -apple-system, "Segoe UI Variable", "Segoe UI", "Pretendard Variable", "Pretendard",
+                 "Malgun Gothic", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .mono {
+    font-family: "Cascadia Code", "SF Mono", Consolas, "D2Coding", ui-monospace, monospace;
+    font-variant-numeric: tabular-nums;
+  }
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .dashboard {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 28px 20px 64px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  /* ---------- header ---------- */
+  .topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 12px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border);
+  }
+  .brand { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .brand-mark {
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    color: var(--accent);
+  }
+  .brand-sub {
+    font-size: 13px;
+    color: var(--text-secondary);
+  }
+  .status-cluster { display: flex; align-items: center; gap: 10px; }
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid transparent;
+  }
+  .status-pill.good { background: color-mix(in srgb, var(--status-good) 14%, transparent); color: var(--status-good); border-color: color-mix(in srgb, var(--status-good) 30%, transparent); }
+  .status-pill.warn { background: color-mix(in srgb, var(--status-warn) 16%, transparent); color: var(--status-warn); border-color: color-mix(in srgb, var(--status-warn) 32%, transparent); }
+  .status-pill .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+  .updated-at { font-size: 12px; color: var(--text-muted); }
+  .heartbeat-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--status-good);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-good) 60%, transparent);
+    animation: pulse 2.4s infinite;
+  }
+  .heartbeat-dot.stale { background: var(--status-idle); animation: none; }
+  @media (prefers-reduced-motion: reduce) { .heartbeat-dot { animation: none; } }
+  @keyframes pulse {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--status-good) 45%, transparent); }
+    70% { box-shadow: 0 0 0 6px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+  }
+
+  /* ---------- kpi row ---------- */
+  .kpi-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+  }
+  @media (max-width: 720px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+  .kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .kpi-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .kpi-value {
+    font-size: 26px;
+    font-weight: 700;
+    line-height: 1.1;
+  }
+  .kpi-value.gain { color: var(--gain); }
+  .kpi-value.loss { color: var(--loss); }
+  .kpi-sub { font-size: 12.5px; color: var(--text-muted); }
+  .kpi-bar {
+    margin-top: 4px;
+    height: 4px;
+    border-radius: 2px;
+    background: var(--surface-2);
+    overflow: hidden;
+  }
+  .kpi-bar > span { display: block; height: 100%; background: var(--status-warn); border-radius: 2px; }
+
+  /* ---------- section shell ---------- */
+  section.panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 22px;
+  }
+  section.panel > h2 {
+    margin: 0 0 4px;
+    font-size: 15px;
+    font-weight: 700;
+  }
+  section.panel > .panel-sub {
+    margin: 0 0 16px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+  }
+
+  /* ---------- chart ---------- */
+  .chart-empty {
+    display: flex; align-items: center; justify-content: center;
+    height: 180px; color: var(--text-muted); font-size: 13.5px;
+    border: 1px dashed var(--border); border-radius: 8px;
+  }
+  .chart-svg-wrap { position: relative; }
+  .chart-tooltip {
+    position: absolute;
+    pointer-events: none;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 12.5px;
+    box-shadow: var(--shadow);
+    opacity: 0;
+    transform: translate(-50%, -110%);
+    transition: opacity 0.1s ease;
+    white-space: nowrap;
+  }
+  .chart-tooltip .t-date { color: var(--text-muted); font-size: 11px; }
+  .chart-tooltip .t-val { font-weight: 700; }
+
+  /* ---------- positions ---------- */
+  .position-card {
+    display: grid;
+    grid-template-columns: 90px 1fr auto;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 4px;
+    border-top: 1px solid var(--border);
+  }
+  .position-card:first-child { border-top: none; }
+  .position-ticker { font-weight: 700; }
+  .position-gauge { position: relative; height: 6px; border-radius: 3px; background: var(--surface-2); }
+  .position-gauge .range { position: absolute; top: 0; bottom: 0; background: color-mix(in srgb, var(--accent) 25%, transparent); border-radius: 3px; }
+  .position-gauge .mark { position: absolute; top: -3px; width: 2px; height: 12px; background: var(--text-primary); border-radius: 1px; }
+  .position-labels { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+  .position-shares { font-size: 12.5px; color: var(--text-secondary); text-align: right; }
+  .empty-note { color: var(--text-muted); font-size: 13.5px; }
+
+  /* ---------- history table ---------- */
+  .table-scroll { overflow-x: auto; }
+  table.history {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  table.history th {
+    text-align: left;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-muted);
+    font-weight: 600;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  table.history td {
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  table.history tbody tr:hover { background: var(--surface-2); }
+  .res-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11.5px;
+    font-weight: 600;
+  }
+  .res-pill.win { background: var(--gain-soft); color: var(--gain); }
+  .res-pill.loss { background: var(--loss-soft); color: var(--loss); }
+  .res-pill.pending { background: var(--accent-soft); color: var(--accent); }
+
+  /* ---------- footer ---------- */
+  .methodology {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.7;
+    padding-top: 4px;
+  }
+</style>
+
+<div class="dashboard" id="app">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark">GDR</span>
+      <span class="brand-sub">페이퍼 트레이딩 · KOSPI 갭하락 반등(Gap-Down Rebound) 전략 · 실주문 없음</span>
+    </div>
+    <div class="status-cluster">
+      <span class="status-pill" id="statusPill">—</span>
+      <span class="heartbeat-dot" id="heartbeatDot" title=""></span>
+      <span class="updated-at" id="updatedAt">—</span>
+    </div>
+  </header>
+
+  <section class="kpi-row" id="kpiRow"></section>
+
+  <section class="panel">
+    <h2>누적 손익 추이</h2>
+    <p class="panel-sub">해소된 거래의 pnl% 단순누적(단리) — 자본 복리·동시보유를 반영한 진짜 계좌 곡선은 아님</p>
+    <div class="chart-svg-wrap" id="chartWrap"></div>
+  </section>
+
+  <section class="panel">
+    <h2>오늘의 포지션</h2>
+    <p class="panel-sub" id="positionsSub">장 시작 직후 진입 기록 → 장 마감 후 해소</p>
+    <div id="positionsWrap"></div>
+  </section>
+
+  <section class="panel">
+    <h2>전체 거래 기록</h2>
+    <p class="panel-sub">최신순</p>
+    <div class="table-scroll">
+      <table class="history">
+        <thead>
+          <tr>
+            <th>날짜</th><th>종목</th><th>진입가</th><th>목표가</th><th>손절가</th>
+            <th>수량</th><th>결과</th><th>손익</th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer class="methodology">
+    전략: GDR(gap_rebound.py), f_fill=1.0 · k_stop=1.0 (95종목 사전등록 격자 최선 조합 승계) ·
+    당일 시가 진입 → 당일 고가/저가/종가로 conservative 경로 해소(g0_backtester와 동일 방식) ·
+    실주문은 절대 내지 않음, KIS 시세 조회(읽기 전용)만 사용. 이 로그는 프로젝트의 "메타 감사"에서
+    확인된 진짜 홀드아웃 데이터를 축적하는 용도.
+  </footer>
+</div>
+
+<script>
+  const DATA = __PAYLOAD_JSON__;
+
+  const HALT_LABELS = {
+    none: "정상 가동",
+    daily_loss_limit: "일시정지 · 일일 손실한도",
+    weekly_loss_limit: "일시정지 · 주간 손실한도",
+    monthly_loss_limit: "일시정지 · 월간 손실한도",
+    consecutive_losses: "일시정지 · 연속손실",
+    post_crash_cooldown: "일시정지 · 급락 냉각기간",
+  };
+
+  function fmtPct(v, digits) {
+    if (v === null || v === undefined || Number.isNaN(v)) return "—";
+    const d = digits === undefined ? 2 : digits;
+    const sign = v > 0 ? "+" : "";
+    return `${sign}${v.toFixed(d)}%`;
+  }
+  function fmtPrice(v) {
+    return Math.round(v).toLocaleString("ko-KR");
+  }
+  function signClass(v) {
+    if (v === null || v === undefined) return "";
+    return v > 0 ? "gain" : v < 0 ? "loss" : "";
+  }
+
+  // ---- header status ----
+  const halt = DATA.halt_status || "none";
+  const pill = document.getElementById("statusPill");
+  pill.classList.add(halt === "none" ? "good" : "warn");
+  pill.innerHTML = `<span class="dot"></span>${HALT_LABELS[halt] || halt}`;
+
+  document.getElementById("updatedAt").textContent = "생성: " + DATA.generated_at.replace("T", " ");
+
+  const hbDot = document.getElementById("heartbeatDot");
+  if (DATA.heartbeat) {
+    const hbAge = (Date.now() - new Date(DATA.heartbeat).getTime()) / 36e5; // hours
+    hbDot.title = "마지막 하트비트: " + DATA.heartbeat.replace("T", " ");
+    if (hbAge > 96) hbDot.classList.add("stale");
+  } else {
+    hbDot.classList.add("stale");
+    hbDot.title = "하트비트 없음";
+  }
+
+  // ---- KPI row ----
+  const kpiRow = document.getElementById("kpiRow");
+  const cumClass = signClass(DATA.cum_pnl_pct);
+  const clPct = Math.min(100, (DATA.consecutive_losses / 8) * 100);
+  kpiRow.innerHTML = `
+    <div class="kpi-card">
+      <span class="kpi-label">누적 손익</span>
+      <span class="kpi-value ${cumClass}">${DATA.total_trades ? fmtPct(DATA.cum_pnl_pct) : "—"}</span>
+      <span class="kpi-sub">${DATA.total_trades} 건 해소 기준</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">승률</span>
+      <span class="kpi-value">${DATA.win_rate === null ? "—" : DATA.win_rate.toFixed(1) + "%"}</span>
+      <span class="kpi-sub">해소된 거래 중</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">거래 현황</span>
+      <span class="kpi-value">${DATA.total_trades}<span style="font-size:14px;color:var(--text-muted)"> 해소</span></span>
+      <span class="kpi-sub">${DATA.pending_count}건 진행중</span>
+    </div>
+    <div class="kpi-card">
+      <span class="kpi-label">연속 손실</span>
+      <span class="kpi-value">${DATA.consecutive_losses}<span style="font-size:14px;color:var(--text-muted)">회</span></span>
+      <span class="kpi-sub">서킷브레이커 한도 8회</span>
+      <div class="kpi-bar"><span style="width:${clPct}%"></span></div>
+    </div>
+  `;
+
+  // ---- cumulative pnl chart ----
+  const chartWrap = document.getElementById("chartWrap");
+  const series = DATA.cum_series;
+  if (!series || series.length < 2) {
+    chartWrap.innerHTML = `<div class="chart-empty">아직 해소된 거래가 2건 미만입니다 — 신호가 발생하고 장이 마감되면 여기에 추이가 표시됩니다.</div>`;
+  } else {
+    const W = 900, H = 220, padL = 44, padR = 12, padT = 16, padB = 24;
+    const vals = series.map(p => p.cum_pnl_pct);
+    let minV = Math.min(0, ...vals), maxV = Math.max(0, ...vals);
+    if (minV === maxV) { minV -= 1; maxV += 1; }
+    const spanPad = (maxV - minV) * 0.12;
+    minV -= spanPad; maxV += spanPad;
+
+    const xAt = i => padL + (i / (series.length - 1)) * (W - padL - padR);
+    const yAt = v => padT + (1 - (v - minV) / (maxV - minV)) * (H - padT - padB);
+    const zeroY = yAt(0);
+    const zeroOffset = Math.min(1, Math.max(0, (zeroY - padT) / (H - padT - padB)));
+
+    const linePts = series.map((p, i) => `${xAt(i)},${yAt(p.cum_pnl_pct)}`).join(" L ");
+    const linePath = `M ${linePts}`;
+    const areaPath = `M ${xAt(0)},${zeroY} L ${linePts} L ${xAt(series.length - 1)},${zeroY} Z`;
+
+    // 소박한 눈금 (0 포함 5개 내외)
+    const gridSteps = 4;
+    let gridLines = "";
+    for (let i = 0; i <= gridSteps; i++) {
+      const v = minV + (i / gridSteps) * (maxV - minV);
+      const y = yAt(v);
+      gridLines += `<line x1="${padL}" y1="${y}" x2="${W - padR}" y2="${y}" stroke="var(--border)" stroke-width="1"/>`;
+      gridLines += `<text x="${padL - 8}" y="${y + 3}" text-anchor="end" class="mono" font-size="10" fill="var(--text-muted)">${v.toFixed(1)}%</text>`;
+    }
+
+    const last = series[series.length - 1];
+    const lastX = xAt(series.length - 1), lastY = yAt(last.cum_pnl_pct);
+
+    chartWrap.innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" id="pnlSvg" role="img" aria-label="누적 손익 추이 차트">
+        <defs>
+          <linearGradient id="pnlFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="${zeroOffset}" stop-color="var(--gain)" stop-opacity="0.28"/>
+            <stop offset="${zeroOffset}" stop-color="var(--loss)" stop-opacity="0.28"/>
+          </linearGradient>
+          <linearGradient id="pnlStroke" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="${zeroOffset}" stop-color="var(--gain)"/>
+            <stop offset="${zeroOffset}" stop-color="var(--loss)"/>
+          </linearGradient>
+        </defs>
+        ${gridLines}
+        <line x1="${padL}" y1="${zeroY}" x2="${W - padR}" y2="${zeroY}" stroke="var(--text-muted)" stroke-width="1" stroke-dasharray="3 3"/>
+        <path d="${areaPath}" fill="url(#pnlFill)" stroke="none"/>
+        <path d="${linePath}" fill="none" stroke="url(#pnlStroke)" stroke-width="2"/>
+        <circle cx="${lastX}" cy="${lastY}" r="4" fill="${last.cum_pnl_pct >= 0 ? "var(--gain)" : "var(--loss)"}" stroke="var(--surface)" stroke-width="2"/>
+        <rect id="hoverCatcher" x="${padL}" y="${padT}" width="${W - padL - padR}" height="${H - padT - padB}" fill="transparent"/>
+        <line id="crosshair" x1="0" y1="${padT}" x2="0" y2="${H - padB}" stroke="var(--text-muted)" stroke-width="1" opacity="0"/>
+      </svg>
+      <div class="chart-tooltip" id="chartTooltip"><div class="t-date"></div><div class="t-val mono"></div></div>
+    `;
+
+    const svg = document.getElementById("pnlSvg");
+    const catcher = document.getElementById("hoverCatcher");
+    const crosshair = document.getElementById("crosshair");
+    const tooltip = document.getElementById("chartTooltip");
+
+    catcher.addEventListener("mousemove", (ev) => {
+      const rect = svg.getBoundingClientRect();
+      const relX = ((ev.clientX - rect.left) / rect.width) * W;
+      let idx = Math.round(((relX - padL) / (W - padL - padR)) * (series.length - 1));
+      idx = Math.max(0, Math.min(series.length - 1, idx));
+      const p = series[idx];
+      const px = xAt(idx);
+      crosshair.setAttribute("x1", px); crosshair.setAttribute("x2", px);
+      crosshair.setAttribute("opacity", "1");
+      tooltip.style.opacity = "1";
+      tooltip.style.left = (px / W) * 100 + "%";
+      tooltip.style.top = (yAt(p.cum_pnl_pct) / H) * 100 + "%";
+      tooltip.querySelector(".t-date").textContent = `${p.date} · ${p.ticker}`;
+      tooltip.querySelector(".t-val").textContent = `누적 ${fmtPct(p.cum_pnl_pct)} (이 거래 ${fmtPct(p.pnl_pct)})`;
+    });
+    catcher.addEventListener("mouseleave", () => {
+      crosshair.setAttribute("opacity", "0");
+      tooltip.style.opacity = "0";
+    });
+  }
+
+  // ---- today's positions ----
+  const posWrap = document.getElementById("positionsWrap");
+  if (!DATA.pending.length) {
+    posWrap.innerHTML = `<p class="empty-note">오늘 진행 중인 포지션이 없습니다.</p>`;
+  } else {
+    posWrap.innerHTML = DATA.pending.map(p => {
+      const lo = Math.min(p.stop_price, p.entry_price, p.target_price);
+      const hi = Math.max(p.stop_price, p.entry_price, p.target_price);
+      const pct = v => ((v - lo) / (hi - lo)) * 100;
+      return `
+        <div class="position-card">
+          <span class="position-ticker mono">${p.ticker}</span>
+          <div>
+            <div class="position-gauge">
+              <span class="range" style="left:${pct(Math.min(p.stop_price,p.entry_price))}%; width:${Math.abs(pct(p.entry_price)-pct(p.stop_price))}%"></span>
+              <span class="mark" style="left:calc(${pct(p.entry_price)}% - 1px)"></span>
+            </div>
+            <div class="position-labels mono">
+              <span>손절 ${fmtPrice(p.stop_price)}</span>
+              <span>시가 ${fmtPrice(p.entry_price)}</span>
+              <span>목표 ${fmtPrice(p.target_price)}</span>
+            </div>
+          </div>
+          <span class="position-shares mono">${p.shares}주</span>
+        </div>
+      `;
+    }).join("");
+  }
+
+  // ---- history table ----
+  const RES_LABEL = { target_hit: "목표달성", stop_hit: "손절", ambiguous: "충돌봉(보수)", close_exit: "종가청산" };
+  const tbody = document.getElementById("historyBody");
+  if (!DATA.history.length) {
+    tbody.innerHTML = `<tr><td colspan="8" class="empty-note" style="padding:16px 10px;">아직 기록된 거래가 없습니다.</td></tr>`;
+  } else {
+    tbody.innerHTML = DATA.history.map(h => {
+      const resClass = h.resolution === null ? "pending" : (h.pnl_pct > 0 ? "win" : "loss");
+      const resLabel = h.resolution === null ? "미결" : (RES_LABEL[h.resolution] || h.resolution);
+      return `
+        <tr>
+          <td class="mono">${h.date}</td>
+          <td class="mono">${h.ticker}</td>
+          <td class="mono">${fmtPrice(h.entry_price)}</td>
+          <td class="mono">${fmtPrice(h.target_price)}</td>
+          <td class="mono">${fmtPrice(h.stop_price)}</td>
+          <td class="mono">${h.shares}</td>
+          <td><span class="res-pill ${resClass}">${resLabel}</span></td>
+          <td class="mono ${signClass(h.pnl_pct)}">${fmtPct(h.pnl_pct, 3)}</td>
+        </tr>
+      `;
+    }).join("");
+  }
+</script>
