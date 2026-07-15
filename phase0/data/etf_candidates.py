@@ -70,4 +70,20 @@ EXPANDED_CANDIDATES: list[str] = DEFAULT_CANDIDATES + [
     "228800",  # TIGER 여행레저
     "228810",  # TIGER 미디어컨텐츠
     "315270",  # TIGER 200 커뮤니케이션서비스
+    "102780",  # KODEX 삼성그룹
+    "213610",  # KODEX 삼성그룹밸류
+    "138520",  # TIGER 삼성그룹
+    "138530",  # TIGER LG그룹+
+    "138540",  # TIGER 현대차그룹+
+    "337160",  # KODEX 200ESG
+    "279530",  # KODEX 고배당
+    "325020",  # KODEX 배당가치
+    "266160",  # KBSTAR 고배당
+    "210780",  # TIGER 코스피고배당
+    "322410",  # HANARO 고배당
+    "161510",  # ARIRANG 고배당
+    "292150",  # TIGER TOP10
+    "228820",  # TIGER KTOP30
+    "229720",  # KODEX KTOP30
+    "292160",  # TIGER KRX300
 ]

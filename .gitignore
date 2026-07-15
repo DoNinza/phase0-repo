@@ -11,6 +11,7 @@ __pycache__/
 
 # 페이퍼 트레이딩 런타임 데이터(거래 로그·하트비트) — 소스코드 아님, 개인 실행 기록
 data/paper_trading/
+data/paper_trading_etf/
 
 # 분봉 축적 런타임 데이터 — 소스코드 아님, 매일 쌓이는 개인 데이터셋
 data/minute_bars/
