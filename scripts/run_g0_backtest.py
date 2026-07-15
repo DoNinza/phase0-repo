@@ -47,7 +47,7 @@ MARKETS = {
     "us": {
         "fetch_ohlcv": us_ingest.fetch_ohlcv,
         "universes": {"default": us_candidates.DEFAULT_CANDIDATES,
-                      "expanded": us_candidates.DEFAULT_CANDIDATES},
+                      "expanded": us_candidates.EXPANDED_CANDIDATES},
         "costs_path": Path(__file__).resolve().parents[1] / "phase0" / "config" / "us_costs.yaml",
     },
 }
