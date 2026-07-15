@@ -4,6 +4,8 @@ import json
 import pytest
 
 import scripts.generate_dashboard as gd
+from phase0.data.daily_bar_store import append_bars as append_index_bars, store_path as index_store_path
+from phase0.data.pykrx_ingest import OhlcvBar
 from phase0.paper.account_snapshots import AccountSnapshot, append_snapshot
 from phase0.paper.alerts import Alert, append_alert
 from phase0.paper.trade_log import PaperEntry, append_entry
@@ -275,3 +277,59 @@ def test_build_backtest_results_is_json_serializable():
     assert len(encoded) > 0
     # 소수점 재계산 없는 정적 문자열 데이터라 다시 파싱해도 원본과 동일해야 한다.
     assert json.loads(encoded) == payload
+
+
+# ---- B1: 지수 스트립 — 캐시 없음/인증정보 없음도 죽지 않아야 하고, 캐시가
+# 있으면 스파크라인이 최근 N개만 오래된 순으로 잘려야 한다. 라이브 KIS 호출은
+# load_credentials()가 CredentialsMissingError를 던지도록 monkeypatch해
+# 네트워크 없이도 결정적으로 검증한다(build_account_status와 동일하게 이
+# 프로젝트는 KIS 라이브 호출 자체를 직접 pytest하지 않는다).
+
+def test_build_index_strip_missing_cache_and_no_credentials_reports_gracefully(tmp_path, monkeypatch):
+    monkeypatch.setattr(gd, "INDEX_BARS_DIR", tmp_path / "index_bars_missing")
+
+    def _raise_missing_creds():
+        raise gd.CredentialsMissingError("테스트: 인증정보 없음")
+    monkeypatch.setattr(gd, "load_credentials", _raise_missing_creds)
+
+    strip = gd.build_index_strip()
+    indices = strip["indices"]
+    assert {i["key"] for i in indices} == {"kospi", "kosdaq", "kospi200"}
+    for idx in indices:
+        assert idx["live_available"] is False
+        assert idx["current"] is None
+        assert idx["change_pct"] is None
+        assert idx["sparkline_closes"] == []
+        assert idx["as_of"] is None
+
+
+def test_build_index_strip_seeded_cache_caps_and_orders_sparkline(tmp_path, monkeypatch):
+    index_dir = tmp_path / "index_bars"
+    monkeypatch.setattr(gd, "INDEX_BARS_DIR", index_dir)
+    monkeypatch.setattr(gd, "INDEX_STRIP_SPARKLINE_LIMIT", 5)
+
+    def _raise_missing_creds():
+        raise gd.CredentialsMissingError("테스트: 인증정보 없음")
+    monkeypatch.setattr(gd, "load_credentials", _raise_missing_creds)
+
+    bars = [
+        OhlcvBar(date=f"202607{d:02d}", open=100.0 + d, high=101.0 + d, low=99.0 + d,
+                 close=100.0 + d, volume=1000)
+        for d in range(1, 11)   # 20260701..20260710, 한도(5)보다 많은 10봉
+    ]
+    append_index_bars(index_store_path(index_dir, "kospi"), bars)
+
+    strip = gd.build_index_strip()
+    by_key = {i["key"]: i for i in strip["indices"]}
+
+    kospi = by_key["kospi"]
+    # 마지막 5개, 오래된 날짜 -> 최신 날짜 순(20260706~20260710의 종가)
+    assert kospi["sparkline_closes"] == [106.0, 107.0, 108.0, 109.0, 110.0]
+    assert kospi["as_of"] == "20260710"
+    assert kospi["live_available"] is False
+    assert kospi["current"] is None
+
+    # 캐시가 아예 없는 지수는 죽지 않고 빈 스파크라인으로 보고되어야 한다.
+    assert by_key["kosdaq"]["sparkline_closes"] == []
+    assert by_key["kosdaq"]["as_of"] is None
+    assert by_key["kospi200"]["sparkline_closes"] == []

@@ -53,6 +53,7 @@ from phase0.strategy.gap_rebound import (
     ATR_BAND, GAP_CAP, MIN_HISTORY, PREV_DAY_CRASH, TREND_FLOOR, evaluate_conditions,
 )
 from scripts.collect_daily_bars_watchlist import BASE_DIR as DAILY_BARS_DIR, WATCHLIST
+from scripts.collect_index_bars import BASE_DIR as INDEX_BARS_DIR, INDEX_CODES, INDEX_LABELS
 from scripts.collect_minute_bars_kiwoom import fetch_ticker_bars as fetch_kiwoom_minute_bars, issue_token as issue_kiwoom_token
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -146,14 +147,9 @@ def _to_float(value, default: float = 0.0) -> float:
         return default
 
 
-def build_account_status() -> dict:
-    """실계좌 잔고(읽기 전용 조회) — KIS 장애·인증정보 없음·레이트리밋 등으로
-    실패해도 대시보드 전체 생성은 막지 않도록 항상 dict를 반환한다."""
-    try:
-        creds = load_credentials()
-    except CredentialsMissingError:
-        return {"available": False, "error": "인증정보 없음"}
-
+def _issue_kis_token(creds) -> str | None:
+    """KIS 토큰 발급 — 분당 1회 수준으로 제한되어 있어(반복적으로 걸린 이력
+    있음) build_payload() 안에서 딱 한 번만 호출하고 여러 곳에서 공유한다."""
     try:
         token_resp = requests.post(
             f"{creds.base_url}/oauth2/tokenP",
@@ -162,7 +158,30 @@ def build_account_status() -> dict:
             timeout=10,
         )
         token_resp.raise_for_status()
-        token = token_resp.json()["access_token"]
+        return token_resp.json()["access_token"]
+    except Exception:
+        return None
+
+
+def build_account_status(creds=None, token: str | None = None) -> dict:
+    """실계좌 잔고(읽기 전용 조회) — KIS 장애·인증정보 없음·레이트리밋 등으로
+    실패해도 대시보드 전체 생성은 막지 않도록 항상 dict를 반환한다.
+
+    creds/token을 넘기면(예: build_payload()가 이미 발급한 토큰) 재발급 없이
+    재사용한다 — build_index_strip()과 한 실행 안에서 토큰을 두 번 발급하면
+    KIS 레이트리밋에 걸려 매번 둘 중 하나가 실패하는 문제가 실측으로 확인돼
+    이 공유 방식으로 바꿨다."""
+    if creds is None:
+        try:
+            creds = load_credentials()
+        except CredentialsMissingError:
+            return {"available": False, "error": "인증정보 없음"}
+
+    try:
+        if token is None:
+            token = _issue_kis_token(creds)
+        if token is None:
+            return {"available": False, "error": "토큰 발급 실패"}
 
         resp = requests.get(
             f"{creds.base_url}/uapi/domestic-stock/v1/trading/inquire-balance",
@@ -216,6 +235,90 @@ def build_account_status() -> dict:
         "pnl_rate": _to_float(summary.get("asst_icdc_erng_rt")),
         "holdings": holdings,
     }
+
+
+TR_ID_INDEX_PRICE = "FHPUP02100000"   # 업종 현재지수(inquire-index-price)
+INDEX_STRIP_SPARKLINE_LIMIT = 60   # 대시보드 페이로드 크기 억제용 — 스파크라인은 종가만 최근 60거래일
+
+
+def build_index_strip(creds=None, token: str | None = None) -> dict:
+    """B1 "지수 스트립" — 코스피/코스닥/코스피200 현재가+최근 스파크라인.
+
+    스파크라인(최근 ~60거래일 종가)은 collect_index_bars.py가 채우는 로컬
+    캐시(data/index_bars/*.jsonl)만 읽는다 — 라이브 호출 없이 항상 그릴 수
+    있다. 현재가/등락률은 KIS inquire-index-price를 지수별로 조회한다.
+
+    creds/token을 넘기면(build_payload()가 이미 발급한 토큰) 재발급하지
+    않는다 — build_account_status()와 각자 토큰을 발급하면 같은 실행 안에서
+    수 초 간격으로 두 번 발급하는 셈이라 KIS 레이트리밋(분당 1회 수준)에
+    걸려 실제로 매번 둘 중 하나가 실패하는 것을 확인해(대시보드 정상 실행
+    중 지수 3개 실시간 조회가 0/3으로 실패) 토큰을 공유하도록 고쳤다.
+    인자를 안 넘기면 이 함수 스스로 발급한다(단독 호출·테스트 대비).
+
+    토큰 발급 자체가 실패하거나(인증정보 없음/레이트리밋 등) 개별 지수
+    조회가 실패해도 예외를 던지지 않는다 — 그 지수는 live_available=False로
+    표시하고 캐시된 스파크라인만 보여준다(다른 build_*()들과 동일한
+    "부분 실패가 전체를 막지 않는다" 계약).
+    """
+    if creds is None:
+        try:
+            creds = load_credentials()
+        except CredentialsMissingError:
+            creds = None
+
+    if creds is not None and token is None:
+        token = _issue_kis_token(creds)
+
+    now_iso = dt.datetime.now().isoformat(timespec="seconds")
+    indices_out = []
+    for key, code in INDEX_CODES.items():
+        bars = load_daily_bars(daily_store_path(INDEX_BARS_DIR, key))
+        sparkline = [b.close for b in bars[-INDEX_STRIP_SPARKLINE_LIMIT:]]
+        as_of = bars[-1].date if bars else None
+
+        current = None
+        change_pct = None
+        live_available = False
+        if token is not None:
+            try:
+                resp = requests.get(
+                    f"{creds.base_url}/uapi/domestic-stock/v1/quotations/inquire-index-price",
+                    headers={
+                        "content-type": "application/json",
+                        "authorization": f"Bearer {token}",
+                        "appkey": creds.app_key,
+                        "appsecret": creds.app_secret,
+                        "tr_id": TR_ID_INDEX_PRICE,
+                        "custtype": "P",
+                    },
+                    params={"FID_COND_MRKT_DIV_CODE": "U", "FID_INPUT_ISCD": code},
+                    timeout=10,
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                if data.get("rt_cd") != "0":
+                    raise RuntimeError(data.get("msg1", "조회 실패").strip())
+                output = data.get("output") or {}
+                current = _to_float(output.get("bstp_nmix_prpr"))
+                change_pct = _to_float(output.get("bstp_nmix_prdy_ctrt"))
+                live_available = True
+                as_of = now_iso
+            except Exception:
+                current = None
+                change_pct = None
+                live_available = False
+
+        indices_out.append({
+            "key": key,
+            "label": INDEX_LABELS[key],
+            "current": current,
+            "change_pct": change_pct,
+            "as_of": as_of,
+            "sparkline_closes": sparkline,
+            "live_available": live_available,
+        })
+
+    return {"indices": indices_out}
 
 
 DAILY_BARS_EMBEDDED_LIMIT = 260   # 대시보드 페이로드 크기 억제용(약 1년치) — weekly/monthly는 전체 이력으로 계산 후 별도 임베드
@@ -672,6 +775,19 @@ def build_payload() -> dict:
 
     heartbeat = HEARTBEAT_PATH.read_text(encoding="utf-8").strip() if HEARTBEAT_PATH.exists() else None
 
+    # KIS 토큰을 여기서 딱 한 번만 발급해 build_account_status()/build_index_strip()가
+    # 공유한다 — 각자 발급하면 같은 실행 안에서 수 초 간격으로 두 번 발급하는
+    # 셈이라 KIS 레이트리밋(분당 1회 수준)에 걸려 실제로 매번 둘 중 하나가
+    # 실패하는 것을 실측으로 확인했다.
+    kis_creds = None
+    kis_token = None
+    try:
+        kis_creds = load_credentials()
+    except CredentialsMissingError:
+        kis_creds = None
+    if kis_creds is not None:
+        kis_token = _issue_kis_token(kis_creds)
+
     return {
         "generated_at": dt.datetime.now().isoformat(timespec="seconds"),
         "heartbeat": heartbeat,
@@ -696,7 +812,7 @@ def build_payload() -> dict:
         ],
         "us_minute_bars": build_us_minute_bar_status(),
         "system_health": build_system_health(),
-        "account": (account := build_account_status()),
+        "account": (account := build_account_status(kis_creds, kis_token)),
         "chart_catalog": build_chart_catalog(account["holdings"] if account["available"] else []),
         "signal_breakdown": build_signal_breakdown(account["holdings"] if account["available"] else []),
         "strategy_data": build_strategy_data(),
@@ -704,6 +820,7 @@ def build_payload() -> dict:
         "equity_curve": build_equity_curve(),
         "alerts": build_alerts(),
         "backtest_results": build_backtest_results(),
+        "index_strip": build_index_strip(kis_creds, kis_token),
     }
 
 
@@ -795,6 +912,10 @@ def main() -> None:
           f"(지연 {n_stale}개), 생성 소요시간 {sh['generation_timing']['total_seconds']:.2f}초")
     print(f"  알림: 이번 실행 신규 {len(new_alerts)}건, 누적 {payload['alerts']['n_total']}건")
     print(f"  백테스트 결과 탭: 결과셋 {len(payload['backtest_results']['result_sets'])}개(정적 데이터, README 전사)")
+    idx = payload["index_strip"]["indices"]
+    n_live = sum(1 for i in idx if i["live_available"])
+    bars_str = ", ".join(f"{i['label']}={len(i['sparkline_closes'])}봉" for i in idx)
+    print(f"  지수 스트립: {len(idx)}개 중 실시간 조회 성공 {n_live}개 ({bars_str})")
 
 
 if __name__ == "__main__":

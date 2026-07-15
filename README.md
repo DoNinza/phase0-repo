@@ -36,7 +36,7 @@
 
 ```bash
 pip install -e ".[dev,data]"
-pytest tests/ -v --cov=phase0                       # 전체 테스트 (251건, 네트워크 불필요)
+pytest tests/ -v --cov=phase0                       # 전체 테스트 (253건, 네트워크 불필요)
 python scripts/print_tables.py                       # 문서 STAGE 3 표1~8 재출력
 python scripts/ingest_real_sample.py 005930 20260701 20260714  # 실제 KRX 데이터 수집 확인
 python scripts/run_candidate_batch.py 20260601 20260714         # 후보 종목 배치 수집(기본 5종목)
@@ -1142,18 +1142,45 @@ diff 리뷰로 검증한 뒤 커밋했다.
   리팩터링, 이후 동일 테스트가 바이트 단위로 그대로 통과함을 재확인.
   기존 `test_gap_rebound.py` 10건은 전혀 손대지 않음, `paper_trade_gdr.py`
   /`paper_trade_etf_gdr.py` 호출부도 변경 불필요.
-- **B1 지수 스트립은 보류** — 착수 전 직접 확인한 결과 pykrx의
-  `get_index_ohlcv`도 이 프로젝트가 계속 겪어온 것과 같은 KRX 서버
-  응답 장애로 깨져 있었다(`Expecting value: line 1 column 1`). KIS
-  API의 대체 지수 시세 엔드포인트를 별도로 조사해야 진행 가능 —
-  가짜/추정 지수값을 넣는 대신 정직하게 보류.
-
 7개 탭으로 확장: 개요/손익달력/종목차트/거래기록/데이터·시스템/
 백테스트/시그널(숫자키 1~7). 대시보드는 여전히 실주문 UI가 전혀 없다 —
 매도/자동매매 시작 버튼, 파라미터 조정 컨트롤, 재실행 버튼 중 어느
 것도 만들지 않았다(Tier C 원칙 유지).
 
 251/251 테스트 통과. `dashboard.html` 최종 약 1.57MB.
+
+## B1 지수 스트립 — pykrx 대신 KIS API로 완성, 2026-07-16 후속
+
+앞서 pykrx의 `get_index_ohlcv`가 깨져 있어 보류했던 B1을 재조사했다.
+GitHub 공식 문서(`koreainvestment/open-trading-api`)에서 KIS의 지수
+전용 엔드포인트를 찾아 실제 계좌로 직접 호출해 확인:
+- 현재지수: `TR_ID=FHPUP02100000`, `GET /uapi/domestic-stock/v1/quotations/inquire-index-price`
+  (`FID_INPUT_ISCD`: 0001=코스피/1001=코스닥/2001=코스피200) — 실호출
+  성공, 코스피 7284.41 정상 반환.
+- 일별 지수차트: `TR_ID=FHKUP03500100`, `GET /uapi/domestic-stock/v1/quotations/inquire-daily-indexchartprice`
+  — 실호출 성공, 12일치 OHLC 반환 확인(1회 호출당 50행 상한 있어 페이지네이션
+  필요함을 구현 중 추가로 확인).
+
+sonnet에 구현 위임: `scripts/collect_index_bars.py`(일봉 캐시 수집,
+`daily_bar_store.py` 재사용, D-1까지만), `build_index_strip()`(캐시된
+최근 60거래일 종가로 스파크라인 + KIS 실시간 조회로 현재가/등락률,
+종가만 임베드해 페이로드 최소화), 개요 탭 최상단에 지수 스트립 패널.
+
+**구현 중 발견하고 직접 고친 버그**: `build_index_strip()`은 지수 3개에
+토큰 1개만 공유하도록 잘 만들어졌지만, `build_payload()` 안에서
+`build_account_status()`가 별도로 자기 토큰을 또 발급하고 있어 — 같은
+실행 안에서 수 초 간격으로 토큰이 두 번 발급되는 셈이라 KIS 레이트리밋
+(분당 1회 수준)에 걸려 **매 실행마다 둘 중 하나가 항상 실패**하는 걸
+직접 재현해 확인했다(첫 실측 실행에서 지수 3개 전부 실시간 조회 실패).
+`_issue_kis_token()` 공유 헬퍼를 추가해 `build_payload()`가 토큰을 딱
+한 번만 발급하고 `build_account_status()`/`build_index_strip()` 양쪽에
+넘기도록 고쳐, 재실행 확인 결과 둘 다 성공(계좌조회+지수 3개 전부
+실시간 조회 성공)함을 확인했다.
+
+`data/index_bars/`를 `.gitignore`에 추가, 평일 15:54 KST 크론으로
+일봉 캐시 증분 수집 등록.
+
+253/253 테스트 통과.
 
 ## 남은 것 (STAGE 7 B·C그룹 — 계좌·API 접근 필요)
 
