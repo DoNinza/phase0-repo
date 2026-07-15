@@ -14,3 +14,4 @@ data/paper_trading/
 
 # 분봉 축적 런타임 데이터 — 소스코드 아님, 매일 쌓이는 개인 데이터셋
 data/minute_bars/
+data/minute_bars_us/
