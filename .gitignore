@@ -8,3 +8,6 @@ __pycache__/
 .env
 .env.*
 !.env.example
+
+# 페이퍼 트레이딩 런타임 데이터(거래 로그·하트비트) — 소스코드 아님, 개인 실행 기록
+data/paper_trading/
