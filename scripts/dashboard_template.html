@@ -2,46 +2,28 @@
 <style>
   /* 터미널 톤: 블룸버그(amber-on-black)·TradingView 다크모드 리서치 반영.
      상승/하락은 한국 관례(빨강=상승/파랑=하락) 유지 — 색맹 인구(적록색약)에
-     안전한 축이기도 하다(Bloomberg UX 리서치, red-green 대신 red-blue 채택). */
+     안전한 축이기도 하다(Bloomberg UX 리서치, red-green 대신 red-blue 채택).
+     트레이딩 터미널은 다크가 기본값이 아니라 정체성이다(참고 스크린샷도
+     전부 다크) — OS가 라이트 모드여도 기본은 항상 다크로 고정하고,
+     뷰어가 직접 라이트로 전환(data-theme="light")했을 때만 예외로 둔다. */
   :root {
-    --bg: #F1F3F6;
-    --surface: #FFFFFF;
-    --surface-2: #E7EBF0;
-    --border: #D3D9E0;
-    --text-primary: #14181F;
-    --text-secondary: #4B5563;
-    --text-muted: #8A94A3;
-    --accent: #B8720A;
-    --accent-soft: rgba(184,114,10,0.12);
-    --gain: #D6272C;
-    --gain-soft: rgba(214,39,44,0.10);
-    --loss: #1D4ED8;
-    --loss-soft: rgba(29,78,216,0.10);
-    --status-good: #16874A;
-    --status-warn: #B45309;
-    --status-idle: #8A94A3;
-    --shadow: 0 1px 2px rgba(20,20,20,0.06), 0 8px 20px rgba(20,20,20,0.06);
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0A0C10;
-      --surface: #12151B;
-      --surface-2: #171B22;
-      --border: #262B35;
-      --text-primary: #E9ECEF;
-      --text-secondary: #98A2B3;
-      --text-muted: #5B6472;
-      --accent: #FFB020;
-      --accent-soft: rgba(255,176,32,0.14);
-      --gain: #FF3B3B;
-      --gain-soft: rgba(255,59,59,0.14);
-      --loss: #3B82F6;
-      --loss-soft: rgba(59,130,246,0.14);
-      --status-good: #2ECC71;
-      --status-warn: #FF8A3D;
-      --status-idle: #5B6472;
-      --shadow: 0 1px 2px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.45);
-    }
+    --bg: #0A0C10;
+    --surface: #12151B;
+    --surface-2: #171B22;
+    --border: #262B35;
+    --text-primary: #E9ECEF;
+    --text-secondary: #98A2B3;
+    --text-muted: #5B6472;
+    --accent: #FFB020;
+    --accent-soft: rgba(255,176,32,0.14);
+    --gain: #FF3B3B;
+    --gain-soft: rgba(255,59,59,0.14);
+    --loss: #3B82F6;
+    --loss-soft: rgba(59,130,246,0.14);
+    --status-good: #2ECC71;
+    --status-warn: #FF8A3D;
+    --status-idle: #5B6472;
+    --shadow: 0 1px 2px rgba(0,0,0,0.5), 0 8px 24px rgba(0,0,0,0.45);
   }
   :root[data-theme="dark"] {
     --bg: #0A0C10; --surface: #12151B; --surface-2: #171B22; --border: #262B35;
@@ -141,13 +123,46 @@
     100% { box-shadow: 0 0 0 0 transparent; }
   }
 
-  /* ---------- kpi row ---------- */
-  .kpi-row {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
+  /* ---------- tab bar ---------- */
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    border-bottom: 1px solid var(--border);
+    margin-top: -2px;
   }
-  @media (max-width: 720px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+  .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: var(--text-secondary);
+    font-size: 12.5px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 10px 14px;
+    margin-bottom: -1px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .tab-btn:hover { color: var(--text-primary); }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+  .tab-key {
+    font-size: 10px;
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0px 5px;
+    background: var(--surface-2);
+  }
+  .tab-btn.active .tab-key { color: var(--accent); border-color: var(--accent); }
+  .tab-panel { display: none; flex-direction: column; gap: 20px; }
+  .tab-panel.active { display: flex; }
+
+  /* ---------- kpi card (account/risk/calendar-summary rows에서 재사용) ---------- */
   .kpi-card {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -171,14 +186,6 @@
   .kpi-value.gain { color: var(--gain); }
   .kpi-value.loss { color: var(--loss); }
   .kpi-sub { font-size: 12.5px; color: var(--text-muted); }
-  .kpi-bar {
-    margin-top: 4px;
-    height: 4px;
-    border-radius: 2px;
-    background: var(--surface-2);
-    overflow: hidden;
-  }
-  .kpi-bar > span { display: block; height: 100%; background: var(--status-warn); border-radius: 2px; }
 
   /* ---------- section shell ---------- */
   section.panel {
@@ -406,105 +413,121 @@
     </div>
   </header>
 
-  <section class="panel">
-    <h2>실계좌 현황</h2>
-    <p class="panel-sub" id="accountSub">KIS 잔고조회(읽기 전용) · 아래 페이퍼 트레이딩 시뮬레이션과는 별개의 실제 계좌 데이터</p>
-    <div id="accountWrap"></div>
-  </section>
+  <nav class="tab-bar" id="tabBar">
+    <button type="button" class="tab-btn active" data-tab="overview"><span class="tab-key">1</span>개요</button>
+    <button type="button" class="tab-btn" data-tab="calendar"><span class="tab-key">2</span>손익달력</button>
+    <button type="button" class="tab-btn" data-tab="chart"><span class="tab-key">3</span>종목차트</button>
+    <button type="button" class="tab-btn" data-tab="history"><span class="tab-key">4</span>거래기록</button>
+    <button type="button" class="tab-btn" data-tab="system"><span class="tab-key">5</span>데이터·시스템</button>
+  </nav>
 
-  <section class="panel">
-    <h2>전략 현황</h2>
-    <p class="panel-sub">전략별 페이퍼 트레이딩 요약 — 사전등록 파라미터 그대로 표시(결과 보고 재선택 안 함)</p>
-    <div id="strategyBoardWrap"></div>
-  </section>
+  <div class="tab-panel active" data-tab="overview">
+    <section class="panel">
+      <h2>실계좌 현황</h2>
+      <p class="panel-sub" id="accountSub">KIS 잔고조회(읽기 전용) · 아래 페이퍼 트레이딩 시뮬레이션과는 별개의 실제 계좌 데이터</p>
+      <div id="accountWrap"></div>
+    </section>
 
-  <section class="panel">
-    <h2>위험지표</h2>
-    <p class="panel-sub">GDR-KR+GDR-ETF 통합, 해소 거래 기준 — 표본 부족 시 확정값 대신 "표본부족"으로 표시</p>
-    <div id="riskMetricsWrap"></div>
-  </section>
+    <section class="panel">
+      <h2>전략 현황</h2>
+      <p class="panel-sub">전략별 페이퍼 트레이딩 요약 — 사전등록 파라미터 그대로 표시(결과 보고 재선택 안 함)</p>
+      <div id="strategyBoardWrap"></div>
+    </section>
 
-  <section class="panel">
-    <h2>손익달력</h2>
-    <p class="panel-sub">GDR-KR·GDR-ETF 해소 거래 통합 — 하루 단위 pnl% 단순평균 기준(자본 복리·동시보유 미반영)</p>
-    <div class="calendar-toolbar">
-      <div class="tf-toggle" id="calendarFilterToggle">
-        <button type="button" data-filter="all" class="active">전체</button>
-        <button type="button" data-filter="kr">KR</button>
-        <button type="button" data-filter="etf">ETF</button>
+    <section class="panel">
+      <h2>위험지표</h2>
+      <p class="panel-sub">GDR-KR+GDR-ETF 통합, 해소 거래 기준 — 표본 부족 시 확정값 대신 "표본부족"으로 표시</p>
+      <div id="riskMetricsWrap"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-tab="calendar">
+    <section class="panel">
+      <h2>손익달력</h2>
+      <p class="panel-sub">GDR-KR·GDR-ETF 해소 거래 통합 — 하루 단위 pnl% 단순평균 기준(자본 복리·동시보유 미반영)</p>
+      <div class="calendar-toolbar">
+        <div class="tf-toggle" id="calendarFilterToggle">
+          <button type="button" data-filter="all" class="active">전체</button>
+          <button type="button" data-filter="kr">KR</button>
+          <button type="button" data-filter="etf">ETF</button>
+        </div>
+        <div class="calendar-nav">
+          <button type="button" id="calPrevMonth" class="cal-nav-btn">◀</button>
+          <span id="calMonthLabel" class="mono cal-month-label">—</span>
+          <button type="button" id="calNextMonth" class="cal-nav-btn">▶</button>
+          <button type="button" id="calTodayBtn" class="cal-today-btn">오늘</button>
+        </div>
       </div>
-      <div class="calendar-nav">
-        <button type="button" id="calPrevMonth" class="cal-nav-btn">◀</button>
-        <span id="calMonthLabel" class="mono cal-month-label">—</span>
-        <button type="button" id="calNextMonth" class="cal-nav-btn">▶</button>
-        <button type="button" id="calTodayBtn" class="cal-today-btn">오늘</button>
+      <div class="calendar-summary-row" id="calendarSummaryRow"></div>
+      <div class="calendar-grid" id="calendarGrid"></div>
+      <p class="panel-sub" id="calendarDaySub" style="margin-top:14px;">날짜를 선택하면 그날의 거래가 아래 표시됩니다.</p>
+      <div class="table-scroll">
+        <table class="history">
+          <thead>
+            <tr><th>전략</th><th>종목</th><th>진입가</th><th>목표가</th><th>손절가</th><th>결과</th><th>손익</th></tr>
+          </thead>
+          <tbody id="calendarDayTradesBody"></tbody>
+        </table>
       </div>
-    </div>
-    <div class="calendar-summary-row" id="calendarSummaryRow"></div>
-    <div class="calendar-grid" id="calendarGrid"></div>
-    <p class="panel-sub" id="calendarDaySub" style="margin-top:14px;">날짜를 선택하면 그날의 거래가 아래 표시됩니다.</p>
-    <div class="table-scroll">
-      <table class="history">
-        <thead>
-          <tr><th>전략</th><th>종목</th><th>진입가</th><th>목표가</th><th>손절가</th><th>결과</th><th>손익</th></tr>
-        </thead>
-        <tbody id="calendarDayTradesBody"></tbody>
-      </table>
-    </div>
-  </section>
+    </section>
+  </div>
 
-  <section class="panel">
-    <h2>종목별 차트</h2>
-    <p class="panel-sub">보유종목+워치리스트(KR 기본 20·ETF 기본 15) 대상 검색 · 분봉은 보유종목만 대시보드 생성 시 키움 API로 즉석조회</p>
-    <div class="stock-chart-toolbar">
-      <input list="stockTickerList" id="stockSearchInput" class="mono" placeholder="종목코드 또는 이름 검색 (예: 005930, 삼성전자)" autocomplete="off" />
-      <datalist id="stockTickerList"></datalist>
-      <div class="tf-toggle" id="tfToggle">
-        <button type="button" data-tf="minute">분봉</button>
-        <button type="button" data-tf="daily">일봉</button>
-        <button type="button" data-tf="weekly">주봉</button>
-        <button type="button" data-tf="monthly">월봉</button>
+  <div class="tab-panel" data-tab="chart">
+    <section class="panel">
+      <h2>종목별 차트</h2>
+      <p class="panel-sub">보유종목+워치리스트(KR 기본 20·ETF 기본 15) 대상 검색 · 분봉은 보유종목만 대시보드 생성 시 키움 API로 즉석조회</p>
+      <div class="stock-chart-toolbar">
+        <input list="stockTickerList" id="stockSearchInput" class="mono" placeholder="종목코드 또는 이름 검색 (예: 005930, 삼성전자)" autocomplete="off" />
+        <datalist id="stockTickerList"></datalist>
+        <div class="tf-toggle" id="tfToggle">
+          <button type="button" data-tf="minute">분봉</button>
+          <button type="button" data-tf="daily">일봉</button>
+          <button type="button" data-tf="weekly">주봉</button>
+          <button type="button" data-tf="monthly">월봉</button>
+        </div>
       </div>
-    </div>
-    <div id="stockChartWrap"></div>
-    <div class="stock-chart-info" id="stockChartInfo"></div>
-  </section>
+      <div id="stockChartWrap"></div>
+      <div class="stock-chart-info" id="stockChartInfo"></div>
+    </section>
+  </div>
 
-  <section class="kpi-row" id="kpiRow"></section>
+  <div class="tab-panel" data-tab="history">
+    <section class="panel">
+      <h2>누적 손익 추이 (GDR-KR)</h2>
+      <p class="panel-sub">해소된 거래의 pnl% 단순누적(단리) — 자본 복리·동시보유를 반영한 진짜 계좌 곡선은 아님</p>
+      <div class="chart-svg-wrap" id="chartWrap"></div>
+    </section>
 
-  <section class="panel">
-    <h2>누적 손익 추이 (GDR-KR)</h2>
-    <p class="panel-sub">해소된 거래의 pnl% 단순누적(단리) — 자본 복리·동시보유를 반영한 진짜 계좌 곡선은 아님</p>
-    <div class="chart-svg-wrap" id="chartWrap"></div>
-  </section>
+    <section class="panel">
+      <h2>오늘의 포지션 (GDR-KR)</h2>
+      <p class="panel-sub" id="positionsSub">장 시작 직후 진입 기록 → 장 마감 후 해소</p>
+      <div id="positionsWrap"></div>
+    </section>
 
-  <section class="panel">
-    <h2>오늘의 포지션 (GDR-KR)</h2>
-    <p class="panel-sub" id="positionsSub">장 시작 직후 진입 기록 → 장 마감 후 해소</p>
-    <div id="positionsWrap"></div>
-  </section>
+    <section class="panel">
+      <h2>전체 거래 기록 (GDR-KR)</h2>
+      <p class="panel-sub">최신순 — ETF 거래 포함 통합 기록은 손익달력 탭 참고</p>
+      <div class="table-scroll">
+        <table class="history">
+          <thead>
+            <tr>
+              <th>날짜</th><th>종목</th><th>진입가</th><th>목표가</th><th>손절가</th>
+              <th>수량</th><th>결과</th><th>손익</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody"></tbody>
+        </table>
+      </div>
+    </section>
+  </div>
 
-  <section class="panel">
-    <h2>미국주식 분봉 축적 현황</h2>
-    <p class="panel-sub">yfinance 5분봉, 60일 롤링 윈도우 — GDR 페이퍼 트레이딩과는 별도인 데이터 축적 파이프라인</p>
-    <div id="usMinuteBarsWrap"></div>
-  </section>
-
-  <section class="panel">
-    <h2>전체 거래 기록 (GDR-KR)</h2>
-    <p class="panel-sub">최신순 — ETF 거래 포함 통합 기록은 위 손익달력 참고</p>
-    <div class="table-scroll">
-      <table class="history">
-        <thead>
-          <tr>
-            <th>날짜</th><th>종목</th><th>진입가</th><th>목표가</th><th>손절가</th>
-            <th>수량</th><th>결과</th><th>손익</th>
-          </tr>
-        </thead>
-        <tbody id="historyBody"></tbody>
-      </table>
-    </div>
-  </section>
+  <div class="tab-panel" data-tab="system">
+    <section class="panel">
+      <h2>미국주식 분봉 축적 현황</h2>
+      <p class="panel-sub">yfinance 5분봉, 60일 롤링 윈도우 — GDR 페이퍼 트레이딩과는 별도인 데이터 축적 파이프라인</p>
+      <div id="usMinuteBarsWrap"></div>
+    </section>
+  </div>
 
   <footer class="methodology">
     전략: GDR(gap_rebound.py), f_fill=1.0 · k_stop=1.0 (95종목 사전등록 격자 최선 조합 승계) ·
@@ -558,6 +581,34 @@
     hbDot.classList.add("stale");
     hbDot.title = "하트비트 없음";
   }
+
+  // ---- tab bar ----
+  (function () {
+    const tabBar = document.getElementById("tabBar");
+    const buttons = Array.from(tabBar.querySelectorAll(".tab-btn"));
+    const panels = Array.from(document.querySelectorAll(".tab-panel"));
+
+    function activate(tabKey) {
+      buttons.forEach(b => b.classList.toggle("active", b.dataset.tab === tabKey));
+      panels.forEach(p => p.classList.toggle("active", p.dataset.tab === tabKey));
+      // 종목차트 탭은 숨겨진(display:none) 상태에서 그려지면 스크롤 컨테이너의
+      // scrollWidth가 0이라 "최신 데이터로 스크롤" 위치가 반영 안 된 채로
+      // 남는다 — 탭이 실제로 보이게 된 시점에 다시 맞춰준다.
+      if (tabKey === "chart") {
+        const scrollEl = document.getElementById("stockChartScroll");
+        if (scrollEl) scrollEl.scrollLeft = scrollEl.scrollWidth;
+      }
+    }
+    buttons.forEach(b => b.addEventListener("click", () => activate(b.dataset.tab)));
+
+    // 숫자키 1~5로 탭 전환 — 입력창 포커스 중엔 무시(종목 검색창 타이핑 방해 금지)
+    document.addEventListener("keydown", (ev) => {
+      const tag = (ev.target.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea") return;
+      const idx = parseInt(ev.key, 10);
+      if (idx >= 1 && idx <= buttons.length) activate(buttons[idx - 1].dataset.tab);
+    });
+  })();
 
   // ---- real account status ----
   const acctWrap = document.getElementById("accountWrap");
@@ -1055,33 +1106,8 @@
     renderChart();
   })();
 
-  // ---- KPI row ----
-  const kpiRow = document.getElementById("kpiRow");
-  const cumClass = signClass(DATA.cum_pnl_pct);
-  const clPct = Math.min(100, (DATA.consecutive_losses / 8) * 100);
-  kpiRow.innerHTML = `
-    <div class="kpi-card">
-      <span class="kpi-label">누적 손익</span>
-      <span class="kpi-value ${cumClass}">${DATA.total_trades ? fmtPct(DATA.cum_pnl_pct) : "—"}</span>
-      <span class="kpi-sub">${DATA.total_trades} 건 해소 기준</span>
-    </div>
-    <div class="kpi-card">
-      <span class="kpi-label">승률</span>
-      <span class="kpi-value">${DATA.win_rate === null ? "—" : DATA.win_rate.toFixed(1) + "%"}</span>
-      <span class="kpi-sub">해소된 거래 중</span>
-    </div>
-    <div class="kpi-card">
-      <span class="kpi-label">거래 현황</span>
-      <span class="kpi-value">${DATA.total_trades}<span style="font-size:14px;color:var(--text-muted)"> 해소</span></span>
-      <span class="kpi-sub">${DATA.pending_count}건 진행중</span>
-    </div>
-    <div class="kpi-card">
-      <span class="kpi-label">연속 손실</span>
-      <span class="kpi-value">${DATA.consecutive_losses}<span style="font-size:14px;color:var(--text-muted)">회</span></span>
-      <span class="kpi-sub">서킷브레이커 한도 8회</span>
-      <div class="kpi-bar"><span style="width:${clPct}%"></span></div>
-    </div>
-  `;
+  // KPI row 제거됨(2026-07-16) — "전략 현황" 탭의 GDR-KR 카드가 누적손익/
+  // 승률/거래현황/연속손실을 이미 전부 포함해 중복이었다.
 
   // ---- cumulative pnl chart ----
   const chartWrap = document.getElementById("chartWrap");
