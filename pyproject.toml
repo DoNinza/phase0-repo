@@ -23,6 +23,9 @@ data = [
     "requests>=2.32",   # KIS Open API 직접 호출용 (kis_credentials, check_minute_bar_history)
     "python-dotenv>=1.0",  # .env 파일에서 KIS_* 인증정보 로드
 ]
+ml = [
+    "scikit-learn>=1.4",   # GDR 신호 스마트 필터(phase0.ml.gdr_filter) — 클래식 ML만, 딥러닝 없음
+]
 
 [tool.setuptools.packages.find]
 include = ["phase0*"]
