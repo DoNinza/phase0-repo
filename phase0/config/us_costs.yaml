@@ -1,0 +1,79 @@
+# us_costs.yaml — 미국 주식 섹터 비용 파라미터 (2026-07-15, KOSPI costs.yaml과 분리)
+#
+# 단위: 소수(0.01=1%), 왕복(매수+매도) 기준.
+#
+# 구조적 차이(중요, 정직하게 명시): 한국(costs.yaml)은 매도 시 거래세+농특세를
+# "거래 단위로" 부과하지만, 미국주식은 한국 거주자 기준 양도소득세가 거래
+# 단위가 아니라 "연간 순손익 기준"(연 250만원 공제 후 22%, 손실과 상계 가능)
+# 으로 부과된다. 이걸 왕복 비용 C에 그대로 얹으면 손실 거래에도 세금을 매기는
+# 오류가 생기므로, Base에는 넣지 않는다 — 아래 excluded_from_base 참고.
+# G0 판정(E_trade)은 세전 기준이며, 실전 배치 전 별도로 연간 세부담을 계산해야
+# 한다.
+
+meta:
+  last_verified: "2026-07-15"
+  next_review_due: "2027-01-01"
+  market: "US (NYSE/NASDAQ, KIS 해외주식 경로)"
+  effective_from: "2026-07-15"
+  source: "업계 일반 안내(온라인 해외주식 수수료 관행), SEC 수수료 공시 — 실계좌 미확인"
+
+# ---------- Base 구성 요소 ----------
+components:
+  brokerage_commission_roundtrip:
+    value: 0.0025
+    tag: "외부 확인 필요"
+    note: >-
+      국내 증권사 온라인 해외주식 수수료는 통상 0.20~0.30% 왕복대에서
+      형성돼 있다는 업계 관행을 임시로 반영(0.25%) — 사용자 실계좌(KIS
+      해외주식 약정)로 아직 확인되지 않았다. KOSPI costs.yaml의
+      brokerage_commission_roundtrip(0.0140527%, 실계좌 확인)과 달리
+      이 값은 플레이스홀더다.
+
+  sec_fee_sell:
+    value: 0.00001
+    tag: "확인된 사실"
+    note: "SEC Section 31 수수료, 매도 측 원금당 공시 요율(공개 정보, 매우 작음)"
+
+  slippage_buy:
+    value: 0.0005
+    tag: "초기 가정"
+    note: "섀도우 테스트 후 확정 — KOSPI와 동일한 방법론 승계(대형주 가정)"
+
+  slippage_sell_normal:
+    value: 0.0010
+    tag: "초기 가정"
+    note: "섀도우 테스트 후 확정 (정상 청산 기준, 손절 청산은 별도 항목)"
+
+# ---------- Base 합산에서 제외되는 조건부 항목 ----------
+conditional:
+  stoploss_market_extra:
+    value: 0.0010
+    tag: "초기 가정"
+    note: "손절 시장가 추가분 — KOSPI와 동일 방법론, Base 왕복 비용에는 포함하지 않음"
+
+# ---------- Base에서 의도적으로 제외 (구조가 다름, 위 설명 참고) ----------
+excluded_from_base:
+  capital_gains_tax:
+    note: >-
+      한국 거주자의 미국주식 양도소득세: 연간 순손익 250만원 공제 후 22%
+      (지방소득세 포함). 거래 단위가 아니라 연간 단위 부과이며 손실과
+      상계 가능 — per-trade E_trade 공식(승률 가중 왕복비용 차감)에
+      그대로 넣으면 손실 거래까지 과세하는 오류가 생긴다. 실전 배치
+      전 별도 모듈로 연간 세부담을 계산할 것.
+
+# ---------- 판정용 시나리오 ----------
+scenarios:
+  optimistic:
+    override_total: 0.0018
+    usage: "판정 사용 금지 — 민감도 방향 참고 전용"
+  base:
+    multiplier: 1.0
+    usage: "1차 판정 (G0~G2 기준)"
+  conservative:
+    multiplier: 1.3
+    usage: "G3 필수 통과 기준 — 손익분기 비용 ≥ Base×1.3"
+  stress:
+    multiplier: 2.0
+    usage: "우수 등급 참고"
+  realized:
+    usage: "운용 중 실측값으로 갱신"

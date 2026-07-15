@@ -22,6 +22,7 @@ data = [
     "pykrx>=1.2",       # 실제 KRX 네트워크 호출 전용 — pykrx_ingest의 기본 fetcher에서만 사용
     "requests>=2.32",   # KIS Open API 직접 호출용 (kis_credentials, check_minute_bar_history)
     "python-dotenv>=1.0",  # .env 파일에서 KIS_* 인증정보 로드
+    "yfinance>=1.5",    # 미국주식 섹터(us_ingest) 실데이터 수집 전용
 ]
 ml = [
     "scikit-learn>=1.4",   # GDR 신호 스마트 필터(phase0.ml.gdr_filter) — 클래식 ML만, 딥러닝 없음
