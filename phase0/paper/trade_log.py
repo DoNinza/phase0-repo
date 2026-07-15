@@ -91,6 +91,24 @@ def monthly_return(entries: list[PaperEntry], as_of_date: str) -> float:
     return sum(e.pnl_pct for e in month_trades) / len(month_trades)
 
 
+def current_drawdown(entries: list[PaperEntry]) -> float:
+    """해소된 거래의 누적 pnl%(단순합) 경로에서 고점 대비 현재 낙폭(peak-to-trough).
+
+    circuit_breaker.check_halt()의 current_drawdown_pct 입력용. 0 이하 소수로
+    반환(예: -0.12 = 고점 대비 -12%). 달력 경계 리셋이 없다는 게 daily/weekly/
+    monthly_return과의 핵심 차이다.
+    """
+    resolved_sorted = sorted(_resolved(entries), key=lambda e: e.date)
+    cum = 0.0
+    peak = 0.0
+    drawdown = 0.0
+    for e in resolved_sorted:
+        cum += e.pnl_pct
+        peak = max(peak, cum)
+        drawdown = min(drawdown, cum - peak)
+    return drawdown
+
+
 def consecutive_losses(entries: list[PaperEntry]) -> int:
     """가장 최근 청산 거래부터 거슬러 올라가며 연속 손실 건수를 센다."""
     resolved_sorted = sorted(_resolved(entries), key=lambda e: e.date)

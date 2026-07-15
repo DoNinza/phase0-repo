@@ -40,8 +40,8 @@ from phase0.data.candidate_batch import DEFAULT_CANDIDATES, EXPANDED_CANDIDATES
 from phase0.data.pykrx_ingest import fetch_ohlcv
 from phase0.engine.position_sizing import size_by_risk
 from phase0.paper.trade_log import (
-    PaperEntry, append_entry, consecutive_losses, daily_return, load_entries,
-    monthly_return, rewrite_all, weekly_return,
+    PaperEntry, append_entry, consecutive_losses, current_drawdown, daily_return,
+    load_entries, monthly_return, rewrite_all, weekly_return,
 )
 from phase0.risk.circuit_breaker import CircuitBreakerConfig, HaltReason, check_halt
 from phase0.strategy.gap_rebound import gap_rebound_signal
@@ -99,6 +99,7 @@ def circuit_breaker_status(entries: list[PaperEntry], today: str) -> HaltReason:
         monthly_return=monthly_return(entries, today),
         consecutive_losses=consecutive_losses(entries),
         hours_since_market_crash=None,   # 시장 급락 감지는 별도 배선 필요 — 아직 없음
+        current_drawdown_pct=current_drawdown(entries),
         config=CircuitBreakerConfig(),
     )
 

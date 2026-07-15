@@ -17,7 +17,8 @@ import sys
 from pathlib import Path
 
 from phase0.paper.trade_log import (
-    consecutive_losses, daily_return, load_entries, monthly_return, weekly_return,
+    consecutive_losses, current_drawdown, daily_return, load_entries, monthly_return,
+    weekly_return,
 )
 from phase0.risk.circuit_breaker import CircuitBreakerConfig, check_halt
 
@@ -53,6 +54,7 @@ def build_payload() -> dict:
         monthly_return=monthly_return(entries, today),
         consecutive_losses=consecutive_losses(entries),
         hours_since_market_crash=None,
+        current_drawdown_pct=current_drawdown(entries),
         config=CircuitBreakerConfig(),
     )
 

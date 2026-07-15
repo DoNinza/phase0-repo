@@ -1,6 +1,8 @@
+import pytest
+
 from phase0.paper.trade_log import (
-    PaperEntry, append_entry, consecutive_losses, daily_return, load_entries,
-    monthly_return, rewrite_all, weekly_return,
+    PaperEntry, append_entry, consecutive_losses, current_drawdown, daily_return,
+    load_entries, monthly_return, rewrite_all, weekly_return,
 )
 
 
@@ -103,3 +105,30 @@ def test_consecutive_losses_ignores_unresolved_trailing_entries():
         _entry(date="20260711", pnl_pct=None, resolution=None),
     ]
     assert consecutive_losses(entries) == 1
+
+
+def test_current_drawdown_zero_when_only_gains():
+    entries = [
+        _entry(date="20260710", pnl_pct=0.01, resolution="target_hit"),
+        _entry(date="20260711", pnl_pct=0.02, resolution="target_hit"),
+    ]
+    assert current_drawdown(entries) == 0.0
+
+
+def test_current_drawdown_measures_peak_to_trough():
+    # 누적: +0.05 -> 0.10(고점) -> 0.04(낙폭 -0.06) -> 0.07
+    entries = [
+        _entry(date="20260710", pnl_pct=0.05, resolution="target_hit"),
+        _entry(date="20260711", pnl_pct=0.05, resolution="target_hit"),
+        _entry(date="20260712", pnl_pct=-0.06, resolution="stop_hit"),
+        _entry(date="20260713", pnl_pct=0.03, resolution="target_hit"),
+    ]
+    assert current_drawdown(entries) == pytest.approx(-0.06)
+
+
+def test_current_drawdown_ignores_unresolved_entries():
+    entries = [
+        _entry(date="20260710", pnl_pct=0.05, resolution="target_hit"),
+        _entry(date="20260711", pnl_pct=None, resolution=None),
+    ]
+    assert current_drawdown(entries) == 0.0
