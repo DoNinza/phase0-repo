@@ -463,6 +463,38 @@
   .bt-conclusion { margin: 10px 0 0; font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
   .bt-source { margin: 6px 0 0; font-size: 11px; color: var(--text-muted); }
 
+  /* ---------- signal breakdown (B3, 시그널 탭) — 회고적 조건 분해 ----------
+     색 규약: 조건 통과/실패는 손익(빨강=상승/파랑=하락) 축을 절대 재사용하지
+     않는다 — 통과=녹색(status-good, "충족"), 실패=파랑(loss-soft, "미충족"),
+     미평가(단락으로 None)=회색(idle). 빨강(상승/성공)은 여기서 쓰지 않는다. */
+  .signal-disclaimer {
+    margin: 0 0 14px;
+    font-size: 12px;
+    color: var(--status-warn);
+    background: color-mix(in srgb, var(--status-warn) 10%, transparent);
+    border-radius: 4px;
+    padding: 6px 10px;
+    line-height: 1.5;
+  }
+  .cond-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .cond-chip.ok   { background: color-mix(in srgb, var(--status-good) 16%, transparent); color: var(--status-good); }
+  .cond-chip.fail { background: var(--loss-soft); color: var(--loss); }
+  .cond-chip.na   { background: color-mix(in srgb, var(--status-idle) 22%, transparent); color: var(--text-secondary); }
+  .cond-cell { display: flex; flex-direction: column; gap: 3px; }
+  .cond-cell-val { font-size: 10.5px; color: var(--text-muted); white-space: nowrap; }
+  .verdict-pill.pass { background: color-mix(in srgb, var(--status-good) 16%, transparent); color: var(--status-good); }
+  .verdict-pill.fail { background: var(--loss-soft); color: var(--loss); }
+  table.history tbody tr.signal-row { cursor: pointer; }
+
   /* ---------- footer ---------- */
   .methodology {
     font-size: 12px;
@@ -492,6 +524,7 @@
     <button type="button" class="tab-btn" data-tab="history"><span class="tab-key">4</span>거래기록</button>
     <button type="button" class="tab-btn" data-tab="system"><span class="tab-key">5</span>데이터·시스템</button>
     <button type="button" class="tab-btn" data-tab="backtest"><span class="tab-key">6</span>백테스트</button>
+    <button type="button" class="tab-btn" data-tab="signal"><span class="tab-key">7</span>시그널</button>
   </nav>
 
   <div class="tab-panel active" data-tab="overview">
@@ -642,6 +675,26 @@
       <h2>사전 등록 백테스트 결과</h2>
       <p class="panel-sub">README.md에 이미 보고된 결과를 그대로 옮긴 정적 표 — 재실행/재계산 버튼 없음, 결과 확정 후 파라미터를 다시 고르지 않는다는 이 프로젝트의 사전등록 원칙</p>
       <div id="backtestResultsWrap"></div>
+    </section>
+  </div>
+
+  <div class="tab-panel" data-tab="signal">
+    <section class="panel">
+      <h2>GDR 시그널 조건 분해 (종목별)</h2>
+      <p class="panel-sub">워치리스트(+보유) 종목별로 GDR 진입조건 C1~C5가 각각 충족됐는지 · 행을 클릭하면 종목차트 탭이 해당 종목으로 전환됩니다</p>
+      <p class="signal-disclaimer" id="signalDisclaimer">⚠ 가장 최근 수집된 일봉을 "오늘"로 간주한 <b>회고적 평가</b> — 실시간 신호가 아니며 장중 갱신되지 않습니다. 실제 진입 판정은 페이퍼 트레이딩 스크립트가 장 시작 직후 별도로 수행합니다.</p>
+      <div class="table-scroll">
+        <table class="history">
+          <thead>
+            <tr>
+              <th>종목</th><th>평가일</th><th>통과</th>
+              <th>C1 추세</th><th>C2 갭밴드</th><th>C3 전일급락</th>
+              <th>C4 변동성</th><th>C5 배당락</th>
+            </tr>
+          </thead>
+          <tbody id="signalBreakdownBody"></tbody>
+        </table>
+      </div>
     </section>
   </div>
 
@@ -1717,5 +1770,79 @@
         <p class="bt-source">출처: ${rs.source} (${rs.date})</p>
       </details>
     `).join("");
+  })();
+
+  // ---- B3: 시그널 조건 분해 (회고적, 종목별 C1~C5) ----
+  // 이 표가 만드는 수치·판정은 전부 서버(build_signal_breakdown → evaluate_conditions)가
+  // 이미 채워 넣은 스칼라를 그대로 표시할 뿐이다 — 여기서 조건을 재판정하지 않는다.
+  // 행 클릭은 종목차트 탭의 stockChart.selectTicker(단일 진실 공급원)를 호출한다.
+  (function () {
+    const sb = DATA.signal_breakdown || { tickers: [], thresholds: {} };
+    const rows = sb.tickers || [];
+    const th = sb.thresholds || {};
+    const body = document.getElementById("signalBreakdownBody");
+    if (!body) return;
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="8" class="empty-note" style="padding:16px 10px;">아직 평가할 워치리스트 일봉 캐시가 없습니다 — 일일 수집이 한 번 돌면 표시됩니다.</td></tr>`;
+      return;
+    }
+
+    // 프랙션(예: -0.02)을 퍼센트 문자열로. fmtPct는 이미 %를 붙이므로 ×100.
+    const pct = (v, d) => (v === null || v === undefined) ? "—" : fmtPct(v * 100, d === undefined ? 2 : d);
+    const num = v => (v === null || v === undefined) ? 0 : v;
+
+    function chip(ok) {
+      if (ok === true) return `<span class="cond-chip ok">✓</span>`;
+      if (ok === false) return `<span class="cond-chip fail">✗</span>`;
+      return `<span class="cond-chip na" title="앞 조건 실패로 평가되지 않음">–</span>`;
+    }
+    function condCell(ok, valHtml) {
+      return `<td><div class="cond-cell">${chip(ok)}<span class="cond-cell-val mono">${valHtml}</span></div></td>`;
+    }
+
+    // 조건 전부 통과 종목을 위로, 그다음 갭 깊은(작은) 순.
+    const sorted = rows.slice().sort((a, b) => {
+      if (a.passed_all !== b.passed_all) return a.passed_all ? -1 : 1;
+      return num(a.gap_pct) - num(b.gap_pct);
+    });
+
+    body.innerHTML = sorted.map(r => {
+      const c1floor = (r.sma20 !== null && th.trend_floor !== undefined) ? r.sma20 * th.trend_floor : null;
+      const c1val = (r.sma20 === null) ? "—"
+        : `종가 ${fmtPrice(r.d1_close)} / 하한 ${c1floor === null ? "—" : fmtPrice(c1floor)}`;
+      const c2val = (r.gap_pct === null) ? "—"
+        : `${pct(r.gap_pct)} (기준 ${r.gap_floor === null ? "—" : pct(-r.gap_floor)}~${th.gap_cap === undefined ? "—" : pct(-th.gap_cap)})`;
+      const c3val = (r.prev_day_return === null) ? "—"
+        : `${pct(r.prev_day_return)} (>${th.prev_day_crash === undefined ? "—" : pct(th.prev_day_crash)})`;
+      const c4val = (r.atr_pct === null) ? "—"
+        : `ATR ${pct(r.atr_pct)} (기준 ${th.atr_band_low === undefined ? "—" : pct(th.atr_band_low)}~${th.atr_band_high === undefined ? "—" : pct(th.atr_band_high)})`;
+      const c5val = r.c5_not_ex_div_window_ok === true ? "창 밖(정상)"
+        : r.c5_not_ex_div_window_ok === false ? "배당락 창" : "—";
+
+      const verdict = r.passed_all
+        ? `<span class="verdict-pill pass">통과</span>`
+        : `<span class="verdict-pill fail">미통과</span>`;
+
+      return `
+        <tr class="signal-row" data-ticker="${r.ticker}">
+          <td>${r.name}<br><span class="holding-ticker mono">${r.ticker}</span></td>
+          <td class="mono">${r.date}</td>
+          <td>${verdict}</td>
+          ${condCell(r.c1_trend_ok, c1val)}
+          ${condCell(r.c2_gap_band_ok, c2val)}
+          ${condCell(r.c3_no_prior_crash_ok, c3val)}
+          ${condCell(r.c4_volatility_band_ok, c4val)}
+          ${condCell(r.c5_not_ex_div_window_ok, c5val)}
+        </tr>
+      `;
+    }).join("");
+
+    body.querySelectorAll(".signal-row").forEach(row => {
+      row.addEventListener("click", () => {
+        stockChart.selectTicker(row.dataset.ticker);
+        const chartBtn = document.querySelector('.tab-btn[data-tab="chart"]');
+        if (chartBtn) chartBtn.click();
+      });
+    });
   })();
 </script>

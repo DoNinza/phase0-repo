@@ -22,6 +22,8 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 from phase0.backtest.g0_backtester import Signal
 from phase0.data.pykrx_ingest import OhlcvBar
 from phase0.strategy.vcb_gap import round_up_to_tick
@@ -53,24 +55,68 @@ def _true_range(prev_close: float, high: float, low: float) -> float:
     return max(high - low, abs(high - prev_close), abs(low - prev_close))
 
 
-def gap_rebound_signal(
+@dataclass
+class GdrConditionReport:
+    """gap_rebound_signal() 평가 도중 계산된 모든 중간값 + 조건별 통과 여부.
+
+    B3 "시그널 탭"이 종목별 조건 분해를 회고적으로 보여주기 위한 구조 —
+    신호 판정 자체는 gap_rebound_signal()이 이 리포트에 위임한다.
+
+    단락(short-circuit) 규약: 원본 gap_rebound_signal()은 조건을 C5(배당락)→
+    C1→C2→C3→C4 순으로 검사하고 첫 실패에서 즉시 종료했다(뒤 조건의 계산은
+    아예 실행되지 않음 — 특히 C3의 `y.close/prev.close` 나눗셈은 C1·C2가
+    통과해야만 도달). 이 동작을 한 치도 바꾸지 않으려고, evaluate_conditions도
+    첫 실패 조건 이후의 조건/중간값은 계산하지 않고 None으로 남긴다. 따라서
+    조건 필드가 None이면 "그 조건에 도달하기 전에 앞 조건이 이미 실패(또는
+    이력부족/배당락)해서 평가되지 않음"을 뜻한다.
+    """
+    insufficient_history: bool
+    gap_pct: float | None = None          # gap = today_open/y.close - 1
+    atr_pct: float | None = None
+    sma20: float | None = None
+    gap_floor: float | None = None        # max(GAP_FLOOR_ABS, GAP_FLOOR_ATR*atr_pct)
+    prev_day_return: float | None = None  # y.close/prev.close - 1 (C3용)
+    c1_trend_ok: bool | None = None
+    c2_gap_band_ok: bool | None = None
+    c3_no_prior_crash_ok: bool | None = None
+    c4_volatility_band_ok: bool | None = None
+    c5_not_ex_div_window_ok: bool | None = None
+
+    @property
+    def passed_all(self) -> bool:
+        """C1~C5가 전부 명시적으로 True일 때만 True(단락으로 None인 게 하나라도
+        있으면 False). 이력부족·배당락 등 어떤 미충족도 여기서 False로 귀결된다."""
+        return (
+            self.c1_trend_ok is True
+            and self.c2_gap_band_ok is True
+            and self.c3_no_prior_crash_ok is True
+            and self.c4_volatility_band_ok is True
+            and self.c5_not_ex_div_window_ok is True
+        )
+
+
+def evaluate_conditions(
     bars: list[OhlcvBar],
     today_open: float,
     today_date: str,
-    f_fill: float = 0.8,
-    k_stop: float = 1.0,
-) -> Signal | None:
-    """bars: D-1까지의 클렌징된 일봉(시간순, 최소 22개). today_open: D일 시가.
+) -> GdrConditionReport:
+    """C1~C5 조건 평가의 단일 진실 공급원 — 중간값과 조건별 통과 여부를 담은
+    GdrConditionReport를 반환한다(가격 산출은 하지 않음 — f_fill/k_stop 불필요).
 
-    조건 C1~C5를 전부 만족하면 오늘 시가에 진입하는 Signal을 반환, 아니면 None.
-    f_fill/k_stop은 PREREGISTERED_GRID 안에서만 고른다(자유 반복 금지).
+    조건은 원본 gap_rebound_signal()과 정확히 같은 순서/단락으로 검사한다
+    (이력부족 → C5 배당락 → sma/atr/gap 계산 → C1 → C2 → C3 → C4). 이 순서와
+    단락은 관측 가능한 동작 보존의 핵심이므로 바꾸지 않는다.
     """
     if len(bars) < MIN_HISTORY:
-        return None
+        # 이력 부족: sma/atr/gap을 계산할 수 없으므로 모든 조건·중간값을 None으로.
+        return GdrConditionReport(insufficient_history=True)
 
-    # C5: 배당락 시즌 제외 (today_date: YYYYMMDD)
+    # C5: 배당락 시즌 제외 (today_date: YYYYMMDD). 원본과 동일하게 sma/atr/gap
+    # 계산 이전에 검사한다 — 배당락이면 뒤 계산(나눗셈 등)에 아예 도달하지 않음.
     if EX_DIV_WINDOW[0] <= today_date[4:8] <= EX_DIV_WINDOW[1]:
-        return None
+        return GdrConditionReport(insufficient_history=False, c5_not_ex_div_window_ok=False)
+
+    report = GdrConditionReport(insufficient_history=False, c5_not_ex_div_window_ok=True)
 
     y, prev = bars[-1], bars[-2]              # D-1, D-2
 
@@ -85,20 +131,62 @@ def gap_rebound_signal(
 
     gap = today_open / y.close - 1
 
-    if not (y.close >= TREND_FLOOR * sma20):
-        return None   # C1: 하락추세 아님 (건강한 종목의 왜곡만 산다)
+    report.sma20 = sma20
+    report.atr_pct = atr_pct
+    report.gap_pct = gap
+
+    # C1: 하락추세 아님 (건강한 종목의 왜곡만 산다)
+    report.c1_trend_ok = y.close >= TREND_FLOOR * sma20
+    if not report.c1_trend_ok:
+        return report
+
+    # C2: 비정상 갭하락 밴드 (너무 얕지도, 악재급도 아님)
     gap_floor = max(GAP_FLOOR_ABS, GAP_FLOOR_ATR * atr_pct)
-    if not (-GAP_CAP <= gap <= -gap_floor):
-        return None   # C2: 비정상 갭하락 밴드 (너무 얕지도, 악재급도 아님)
-    if not (y.close / prev.close - 1 > PREV_DAY_CRASH):
-        return None   # C3: 전일 급락 배제 (연쇄 투매의 둘째 날을 사지 않음)
-    if not (ATR_BAND[0] <= atr_pct <= ATR_BAND[1]):
-        return None   # C4: 변동성 밴드
+    report.gap_floor = gap_floor
+    report.c2_gap_band_ok = -GAP_CAP <= gap <= -gap_floor
+    if not report.c2_gap_band_ok:
+        return report
+
+    # C3: 전일 급락 배제 (연쇄 투매의 둘째 날을 사지 않음).
+    # 여기서 처음으로 prev.close 나눗셈이 실행된다 — C1·C2 통과 후에만 도달하는
+    # 원본의 단락을 그대로 보존한다(prev.close==0 같은 병적 입력의 예외 발생
+    # 시점까지 동일).
+    prev_day_return = y.close / prev.close - 1
+    report.prev_day_return = prev_day_return
+    report.c3_no_prior_crash_ok = prev_day_return > PREV_DAY_CRASH
+    if not report.c3_no_prior_crash_ok:
+        return report
+
+    # C4: 변동성 밴드
+    report.c4_volatility_band_ok = ATR_BAND[0] <= atr_pct <= ATR_BAND[1]
+    return report
+
+
+def gap_rebound_signal(
+    bars: list[OhlcvBar],
+    today_open: float,
+    today_date: str,
+    f_fill: float = 0.8,
+    k_stop: float = 1.0,
+) -> Signal | None:
+    """bars: D-1까지의 클렌징된 일봉(시간순, 최소 22개). today_open: D일 시가.
+
+    조건 C1~C5를 전부 만족하면 오늘 시가에 진입하는 Signal을 반환, 아니면 None.
+    f_fill/k_stop은 PREREGISTERED_GRID 안에서만 고른다(자유 반복 금지).
+
+    조건 평가는 evaluate_conditions()에 위임한다(단일 진실 공급원). 전부
+    통과하면 원본과 동일하게 목표가/손절가를 계산해 Signal을 반환한다.
+    """
+    report = evaluate_conditions(bars, today_open, today_date)
+    if not report.passed_all:
+        return None
+
+    y = bars[-1]                             # D-1
 
     # 목표가: 갭 부분 되메움. 전일 종가가 상한 앵커(자석/저항) — f_fill<=1.0.
     target = today_open + f_fill * (y.close - today_open)
     # 손절가: ATR% 기반 재난 방지선(갭 크기가 아니라 종목 변동성 기준).
-    stop = today_open * (1 - k_stop * atr_pct)
+    stop = today_open * (1 - k_stop * report.atr_pct)
 
     # 올림 반올림은 vcb_gap과 동일한 보수화: 목표가는 더 어렵게, 손절은 더 일찍.
     return Signal(

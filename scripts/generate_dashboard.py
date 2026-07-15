@@ -49,6 +49,9 @@ from phase0.risk.metrics import (
     MIN_DAYS_FOR_RATIO, MIN_DAYS_FOR_VAR, daily_pnl_series, historical_var, sharpe_ratio,
     sortino_ratio,
 )
+from phase0.strategy.gap_rebound import (
+    ATR_BAND, GAP_CAP, MIN_HISTORY, PREV_DAY_CRASH, TREND_FLOOR, evaluate_conditions,
+)
 from scripts.collect_daily_bars_watchlist import BASE_DIR as DAILY_BARS_DIR, WATCHLIST
 from scripts.collect_minute_bars_kiwoom import fetch_ticker_bars as fetch_kiwoom_minute_bars, issue_token as issue_kiwoom_token
 
@@ -575,6 +578,69 @@ def build_backtest_results() -> dict:
     }
 
 
+def build_signal_breakdown(holdings: list[dict]) -> dict:
+    """B3 "시그널" 탭: 워치리스트(+보유) 종목별 GDR 조건(C1~C5) 분해.
+
+    **회고적**이다 — 가장 최근 수집된 일봉을 "오늘"로 간주해, 그 시가에서 GDR이
+    무엇이라 판정했을지를 evaluate_conditions()로 재현한다(장중 실시간 신호 아님).
+    build_chart_catalog와 동일하게 워치리스트 일봉 캐시만 읽고(라이브 호출 없음),
+    보유종목을 앞에 합쳐 종목 집합을 정한다.
+
+    페이로드에는 **스칼라만** 담는다 — 평가에 쓴 봉 이력은 절대 포함하지 않는다
+    (chart_catalog에 이미 있으므로 중복 임베드 금지, README "대시보드가 무거워짐").
+    """
+    held_names = {h["ticker"]: h["name"] for h in holdings}
+    all_tickers = list(dict.fromkeys(list(held_names.keys()) + WATCHLIST))
+
+    tickers_out = []
+    for ticker in all_tickers:
+        bars = load_daily_bars(daily_store_path(DAILY_BARS_DIR, ticker))
+        # '오늘' 봉 하나를 떼어내 history로 평가하려면 최소 MIN_HISTORY+1개 필요.
+        if len(bars) < MIN_HISTORY + 1:
+            continue
+        history = bars[:-1]
+        today = bars[-1]
+        report = evaluate_conditions(history, today.open, today.date)
+
+        # 표시용 페이로드라 프랙션 값은 6자리로 반올림해 용량을 줄인다(UI는
+        # 소수 2자리 %까지만 보여준다 — chart_catalog "짧은 키" 교훈의 연장선).
+        def _r(v, n):
+            return round(v, n) if v is not None else None
+
+        tickers_out.append({
+            "ticker": ticker,
+            "name": held_names.get(ticker) or TICKER_NAMES.get(ticker, ticker),
+            "date": today.date,
+            "d1_close": _r(history[-1].close, 2),   # C1 표시용(y.close, 평가에 쓰인 D-1 종가)
+            "insufficient_history": report.insufficient_history,
+            "passed_all": report.passed_all,
+            "gap_pct": _r(report.gap_pct, 6),
+            "atr_pct": _r(report.atr_pct, 6),
+            "sma20": _r(report.sma20, 2),
+            "gap_floor": _r(report.gap_floor, 6),
+            "prev_day_return": _r(report.prev_day_return, 6),
+            "c1_trend_ok": report.c1_trend_ok,
+            "c2_gap_band_ok": report.c2_gap_band_ok,
+            "c3_no_prior_crash_ok": report.c3_no_prior_crash_ok,
+            "c4_volatility_band_ok": report.c4_volatility_band_ok,
+            "c5_not_ex_div_window_ok": report.c5_not_ex_div_window_ok,
+        })
+
+    # 조건 기준선을 상수로 echo만 한다(단일 진실 공급원 = gap_rebound.py). UI가
+    # "기준 밴드"를 표시할 때 템플릿에 숫자를 하드코딩하지 않도록.
+    return {
+        "tickers": tickers_out,
+        "thresholds": {
+            "trend_floor": TREND_FLOOR,
+            "gap_cap": GAP_CAP,
+            "prev_day_crash": PREV_DAY_CRASH,
+            "atr_band_low": ATR_BAND[0],
+            "atr_band_high": ATR_BAND[1],
+            "min_history": MIN_HISTORY,
+        },
+    }
+
+
 def build_payload() -> dict:
     entries = load_entries(LOG_PATH)
     today = dt.date.today().strftime("%Y%m%d")
@@ -632,6 +698,7 @@ def build_payload() -> dict:
         "system_health": build_system_health(),
         "account": (account := build_account_status()),
         "chart_catalog": build_chart_catalog(account["holdings"] if account["available"] else []),
+        "signal_breakdown": build_signal_breakdown(account["holdings"] if account["available"] else []),
         "strategy_data": build_strategy_data(),
         "risk_metrics": build_risk_metrics(),
         "equity_curve": build_equity_curve(),
@@ -713,6 +780,9 @@ def main() -> None:
     else:
         print(f"  실계좌 조회 실패: {acct['error']}")
     print(f"  종목별 차트 캐시: {len(payload['chart_catalog'])}종목")
+    sb = payload["signal_breakdown"]
+    n_pass = sum(1 for t in sb["tickers"] if t["passed_all"])
+    print(f"  시그널 분해(회고적): {len(sb['tickers'])}종목 평가, 조건 전부 통과 {n_pass}종목")
     rm = payload["risk_metrics"]
     print(f"  위험지표: 거래일수={rm['n_trading_days']}, sharpe={rm['sharpe']}, "
           f"sortino={rm['sortino']}, VaR95={rm['var95_pct']}")
