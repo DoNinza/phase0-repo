@@ -1,6 +1,7 @@
 import pytest
 
 import scripts.generate_dashboard as gd
+from phase0.paper.account_snapshots import AccountSnapshot, append_snapshot
 from phase0.paper.trade_log import PaperEntry, append_entry
 
 
@@ -55,3 +56,35 @@ def test_build_risk_metrics_insufficient_sample_returns_none(tmp_path, monkeypat
     assert rm["sortino"] is None
     assert rm["var95_pct"] is None
     assert rm["bootstrap_ci"] is None
+
+
+def _snapshot(date, ts=None, total_eval_amount=1_000_000.0):
+    return AccountSnapshot(
+        ts=ts or f"{date[:4]}-{date[4:6]}-{date[6:8]}T09:00:00",
+        date=date, deposit=500_000.0, stock_eval_amount=500_000.0,
+        total_eval_amount=total_eval_amount, pnl_amount=0.0,
+    )
+
+
+def test_build_equity_curve_handles_missing_snapshots_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(gd, "ACCOUNT_SNAPSHOTS_PATH", tmp_path / "does_not_exist.jsonl")
+
+    curve = gd.build_equity_curve()
+    assert curve["points"] == []
+    assert curve["n_total_snapshots"] == 0
+
+
+def test_build_equity_curve_respects_embedded_limit(tmp_path, monkeypatch):
+    snapshots_path = tmp_path / "account_snapshots.jsonl"
+    monkeypatch.setattr(gd, "ACCOUNT_SNAPSHOTS_PATH", snapshots_path)
+    monkeypatch.setattr(gd, "EQUITY_CURVE_EMBEDDED_LIMIT", 5)
+
+    for day in range(1, 11):   # 10일치, 한도(5)보다 많음
+        append_snapshot(snapshots_path, _snapshot(f"202607{day:02d}"))
+
+    curve = gd.build_equity_curve()
+    assert curve["n_total_snapshots"] == 10
+    assert len(curve["points"]) == 5
+    # 한도를 넘으면 가장 최근 것들만 남아야 한다(과거가 아니라 최신을 유지)
+    assert curve["points"][-1]["date"] == "20260710"
+    assert curve["points"][0]["date"] == "20260706"

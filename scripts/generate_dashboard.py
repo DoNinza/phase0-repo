@@ -33,6 +33,9 @@ from phase0.data.bar_resample import resample_monthly, resample_weekly
 from phase0.data.daily_bar_store import load_bars as load_daily_bars, store_path as daily_store_path
 from phase0.data.minute_bar_store import load_bars
 from phase0.data.pykrx_ingest import OhlcvBar, fetch_ohlcv
+from phase0.paper.account_snapshots import (
+    AccountSnapshot, append_snapshot, latest_per_date, load_snapshots,
+)
 from phase0.paper.trade_log import (
     consecutive_losses, current_drawdown, daily_return, load_entries, monthly_return,
     weekly_return,
@@ -49,6 +52,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 LOG_PATH = REPO_ROOT / "data" / "paper_trading" / "gdr_trades.jsonl"
 HEARTBEAT_PATH = REPO_ROOT / "data" / "paper_trading" / "heartbeat.txt"
 ETF_LOG_PATH = REPO_ROOT / "data" / "paper_trading_etf" / "gdr_trades.jsonl"
+ACCOUNT_SNAPSHOTS_PATH = REPO_ROOT / "data" / "paper_trading" / "account_snapshots.jsonl"
 TEMPLATE_PATH = REPO_ROOT / "scripts" / "dashboard_template.html"
 DEFAULT_OUT_PATH = REPO_ROOT / "data" / "paper_trading" / "dashboard.html"
 
@@ -170,6 +174,26 @@ def build_account_status() -> dict:
 
 
 DAILY_BARS_EMBEDDED_LIMIT = 260   # 대시보드 페이로드 크기 억제용(약 1년치) — weekly/monthly는 전체 이력으로 계산 후 별도 임베드
+EQUITY_CURVE_EMBEDDED_LIMIT = 730   # 대시보드 페이로드 크기 억제용(약 2년치 일별 스냅샷)
+
+
+def build_equity_curve() -> dict:
+    """실계좌 자산 곡선(B4) — account_snapshots.jsonl을 읽기만 하는 순수 함수.
+
+    스냅샷 자체의 append는 main()에서 한다(이미 fetch한 payload["account"]를
+    재사용하기 위해, 그리고 이 파일의 다른 build_*()들처럼 부작용 없는 순수
+    읽기로 유지하기 위해 — 이 함수를 호출한다고 새 스냅샷이 쓰이지 않는다).
+    """
+    all_snapshots = load_snapshots(ACCOUNT_SNAPSHOTS_PATH)
+    daily = latest_per_date(all_snapshots)
+    limited = daily[-EQUITY_CURVE_EMBEDDED_LIMIT:]
+    return {
+        "points": [
+            {"date": s.date, "total_eval_amount": s.total_eval_amount, "pnl_amount": s.pnl_amount}
+            for s in limited
+        ],
+        "n_total_snapshots": len(all_snapshots),
+    }
 
 
 def _bar_dict(b: OhlcvBar) -> dict:
@@ -401,12 +425,37 @@ def build_payload() -> dict:
         "chart_catalog": build_chart_catalog(account["holdings"] if account["available"] else []),
         "strategy_data": build_strategy_data(),
         "risk_metrics": build_risk_metrics(),
+        "equity_curve": build_equity_curve(),
     }
 
 
 def main() -> None:
     out_path = Path(sys.argv[1]) if len(sys.argv) > 1 else DEFAULT_OUT_PATH
     payload = build_payload()
+
+    # 자산 곡선(B4) 스냅샷 append — payload["account"]는 build_payload() 안에서
+    # build_account_status()로 이미 한 번 조회한 값이라 여기서 KIS를 다시
+    # 호출하지 않는다(레이트리밋 이슈 반복 이력 있음). 조회 실패 시(available
+    # False) 스냅샷을 남기지 않는다 — 0원이 아니라 "모름"이므로 곡선에 거짓
+    # 데이터 포인트를 넣지 않기 위함.
+    acct_for_snapshot = payload["account"]
+    if acct_for_snapshot["available"]:
+        today = dt.date.today().strftime("%Y%m%d")
+        append_snapshot(ACCOUNT_SNAPSHOTS_PATH, AccountSnapshot(
+            ts=dt.datetime.now().isoformat(timespec="seconds"),
+            date=today,
+            deposit=acct_for_snapshot["deposit"],
+            stock_eval_amount=acct_for_snapshot["stock_eval_amount"],
+            total_eval_amount=acct_for_snapshot["total_eval_amount"],
+            pnl_amount=acct_for_snapshot["pnl_amount"],
+        ))
+        # build_payload() 안에서 계산된 equity_curve는 방금 append한 이
+        # 스냅샷을 아직 반영하지 못한 상태(append가 그 이후에 일어났으므로)
+        # — 다음 생성까지 기다리지 않고 이번 회차 대시보드에 바로 반영되도록
+        # 다시 계산한다. build_equity_curve()는 순수 읽기라 재호출 비용이
+        # 거의 없다(KIS 재호출과 달리 로컬 파일 읽기일 뿐).
+        payload["equity_curve"] = build_equity_curve()
+
     payload_json = json.dumps(payload, ensure_ascii=False).replace("</script>", "<\\/script>")
 
     template = TEMPLATE_PATH.read_text(encoding="utf-8")
@@ -428,6 +477,8 @@ def main() -> None:
     rm = payload["risk_metrics"]
     print(f"  위험지표: 거래일수={rm['n_trading_days']}, sharpe={rm['sharpe']}, "
           f"sortino={rm['sortino']}, VaR95={rm['var95_pct']}")
+    ec = payload["equity_curve"]
+    print(f"  자산 곡선: 일별 스냅샷 {len(ec['points'])}건(전체 누적 {ec['n_total_snapshots']}건)")
 
 
 if __name__ == "__main__":
