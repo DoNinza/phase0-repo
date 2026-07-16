@@ -87,9 +87,18 @@ pip install pyyaml            # cron/create_cron_jobs.py가 사용
 ### 3. 프로필 설치
 ```bash
 hermes profile install "/opt/phase0_repo/hermes_profile" --name phase0-trader --alias -y
-phase0-trader config set model claude-opus-4-7
-phase0-trader config set provider anthropic
 ```
+`--alias`를 줘도 `phase0-trader`가 별도 PATH 명령으로 만들어지지는
+않는다(VPS 설치 중 확인) — 설치 완료 메시지에 나오는 `hermes -p
+phase0-trader <명령>` 형태를 아래 모든 단계에서 그대로 쓴다.
+
+모델/제공자를 Claude(Anthropic)로 쓰려면(유료):
+```bash
+hermes -p phase0-trader config set model claude-opus-4-7
+hermes -p phase0-trader config set provider anthropic
+```
+Nous Portal 무료 티어(stepfun/step-3.7-flash:free)를 쓰는 동안은 이 두
+줄은 건너뛴다 — 설치 전 `hermes setup`(전역) 위저드에서 이미 설정됨.
 
 ### 4. 인증정보 설정
 ```bash
@@ -105,16 +114,16 @@ nano .env
 
 ### 5. 스케줄 등록
 ```bash
-export HERMES_PROFILE_CMD=phase0-trader
+export HERMES_PROFILE_CMD="hermes -p phase0-trader"
 export HERMES_REPO_DIR=/opt/phase0_repo
 bash hermes_profile/cron/create_cron_jobs.sh
-phase0-trader cron list   # 9개 등록됐는지 확인
+hermes -p phase0-trader cron list   # 9개 등록됐는지 확인
 ```
 
 ### 6. 게이트웨이(상시 실행) 시작
 ```bash
-phase0-trader gateway install
-phase0-trader gateway start
+hermes -p phase0-trader gateway install
+hermes -p phase0-trader gateway start
 ```
 
 ### 7. 대시보드 웹서버 (localhost) + Caddy 리버스 프록시
