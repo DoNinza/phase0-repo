@@ -1202,6 +1202,30 @@ sonnet에 구현 위임: `scripts/collect_index_bars.py`(일봉 캐시 수집,
 자동 제외)로 교체했다. 스크립트 파일 자체는 삭제하지 않고 남겨둠(수동
 실행용).
 
+## VPS 상시 배포 준비: Hermes Agent 프로필 — 2026-07-16
+
+세션 스코프 크론(최대 7일 만료, 세션 끊기면 즉시 소멸)의 근본 한계를
+해소하기 위해 VPS 배포를 논의. 순수 무인 crontab("A안")과 판단 레이어를
+유지하는 방식("B안") 중 사용자가 B안을 선택, 그 구현체로
+[Hermes Agent](https://github.com/NousResearch/hermes-agent)(Nous
+Research 오픈소스 자율 에이전트, 모델 무관·저사양 VPS에서 상시 실행 가능)
+리서치 후 채택.
+
+`tradermonty/hermes-trading-research-agent-work-package`(미국주식 트레이더용
+"No order placement" Hermes 프로필)의 실제 배포 구조와 `<profile> cron
+create` 문법을 참고해 `hermes_profile/`에 우리 KIS/키움 스크립트용 프로필을
+새로 작성: 프롬프트 9개(기존 CronCreate 프롬프트 그대로 이관), 스케줄
+정의(`data/schedule-presets.yaml`), 등록 스크립트(`cron/create_cron_jobs.py`),
+대시보드용 정적 웹서버 systemd 유닛(Artifact 게시는 세션 종속 기능이라
+VPS에선 못 씀 — `python -m http.server`로 대체). 자세한 설치 절차는
+`hermes_profile/README.md` 참고.
+
+**정직한 한계**: 개발 환경이 Windows라 Hermes를 실제로 설치·실행해본 적은
+없다 — 공식 문서와 실배포 사례의 문법을 최대한 정확히 옮겼지만, 실제
+VPS에서 `hermes cron create` 등 정확한 CLI를 처음 검증하게 된다.
+
+253/253 테스트 통과(순수 배포 설정 파일 추가, 애플리케이션 코드 변경 없음).
+
 ## 남은 것 (STAGE 7 B·C그룹 — 계좌·API 접근 필요)
 
 - `cluster_bootstrap.py`는 여전히 합성 데이터로만 검증됐다 — 실전 배선은

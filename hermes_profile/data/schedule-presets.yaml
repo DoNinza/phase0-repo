@@ -1,0 +1,59 @@
+# Hermes 프로필 스케줄 정의 (Phase 0 KOSPI/KIS/키움 페이퍼 트레이딩).
+#
+# 이 파일은 Claude Code 세션 안에서만 살아있던 CronCreate 크론 9개를
+# 그대로 이관한 것이다 — 스케줄(cron 5필드)과 프롬프트는 실제 세션에서
+# 몇 주간 검증된 그대로다. cron/create_cron_jobs.py가 이 파일을 읽어
+# `<profile> cron create` 명령으로 실제 등록한다.
+#
+# 주의: 스케줄은 timezone 기준 로컬 시각이다. 이 프로젝트는 한국장/KIS/
+# 키움을 다루므로 timezone은 반드시 Asia/Seoul이어야 한다 — 기본값이
+# 다른 예시(예: tradermonty의 America/Los_Angeles)를 그대로 베끼지 말 것.
+
+schema_version: 1
+timezone: Asia/Seoul
+
+presets:
+  - name: gdr-kr-entry
+    schedule: "6 9 * * 1-5"          # 평일 09:06 KST
+    prompt_file: prompts/gdr_kr_entry.md
+    deliver: local
+
+  - name: gdr-etf-entry
+    schedule: "8 9 * * 1-5"          # 평일 09:08 KST
+    prompt_file: prompts/gdr_etf_entry.md
+    deliver: local
+
+  - name: gdr-kr-resolve
+    schedule: "37 15 * * 1-5"        # 평일 15:37 KST
+    prompt_file: prompts/gdr_kr_resolve.md
+    deliver: local
+
+  - name: gdr-etf-resolve
+    schedule: "39 15 * * 1-5"        # 평일 15:39 KST
+    prompt_file: prompts/gdr_etf_resolve.md
+    deliver: local
+
+  - name: kiwoom-minute-catchup
+    schedule: "41 15 * * 1-5"        # 평일 15:41 KST
+    prompt_file: prompts/kiwoom_minute_catchup.md
+    deliver: local
+
+  - name: daily-bars-watchlist
+    schedule: "50 15 * * 1-5"        # 평일 15:50 KST
+    prompt_file: prompts/daily_bars_watchlist.md
+    deliver: local
+
+  - name: index-bars
+    schedule: "54 15 * * 1-5"        # 평일 15:54 KST
+    prompt_file: prompts/index_bars.md
+    deliver: local
+
+  - name: dashboard-regen
+    schedule: "12,42 9-15 * * 1-5"   # 평일 9~15시, 매시 12·42분
+    prompt_file: prompts/dashboard_regen.md
+    deliver: local
+
+  - name: us-minute-bars
+    schedule: "13 5 * * 2-6"         # 화~토 05:13 KST (미국 정규장 마감 직후)
+    prompt_file: prompts/us_minute_bars.md
+    deliver: local
