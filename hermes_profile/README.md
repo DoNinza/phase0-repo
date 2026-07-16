@@ -113,11 +113,24 @@ nano .env
 ```
 
 ### 5. 스케줄 등록
+
+먼저 타임존부터 Asia/Seoul로 맞춘다 — VPS 기본 시스템 시간대는 보통
+UTC라, 이 단계를 건너뛰면 "6 9 * * 1-5"가 KST 09:06이 아니라 **UTC
+09:06(=KST 18:06)**으로 등록된다(실제 VPS 배포 중 겪은 문제 —
+`hermes cron create`가 스케줄 문자열을 타임존 없이 그대로 해석하기
+때문). `hermes cron list`에 뜨는 "Next run"이 `+09:00`으로 나오는지로
+확인 가능:
+```bash
+hermes -p phase0-trader config set cron.timezone "Asia/Seoul"
+hermes -p phase0-trader config set timezone "Asia/Seoul"
+```
+
+그다음 9개 스케줄 등록:
 ```bash
 export HERMES_PROFILE_CMD="hermes -p phase0-trader"
 export HERMES_REPO_DIR=/opt/phase0_repo
 bash hermes_profile/cron/create_cron_jobs.sh
-hermes -p phase0-trader cron list   # 9개 등록됐는지 확인
+hermes -p phase0-trader cron list   # 9개 다 Next run이 +09:00인지 확인
 ```
 
 ### 6. 게이트웨이(상시 실행) 시작
