@@ -45,17 +45,22 @@ hermes_profile/
 
 ### 0. VPS 업체/스펙 추천
 
-GitHub 커뮤니티 사례(`OnlyTerp/hermes-optimization-guide` 등) 기준으로
-**Hetzner**가 Hermes 호스팅용으로 사실상 만장일치 추천을 받는다 — 같은
-스펙 기준 DigitalOcean/AWS Lightsail보다 가격 대비 성능이 확실히 좋다.
+GitHub 커뮤니티 사례(`OnlyTerp/hermes-optimization-guide` 등) 기준으로는
+**Hetzner**가 Hermes 호스팅용 1순위 추천이었으나, **2026-07-16 기준
+Hetzner가 하드웨어 수요 급증으로 신규 고객 포함 클라우드 서버 생성을
+제한 중**이라는 게 공식 상태 페이지(status.hetzner.com)에서 확인됐다
+(해결 시점 미정) — 지금 당장은 가입이 안 될 가능성이 높으니 아래 대안으로
+진행할 것.
 
-- **추천**: Hetzner **CX22**(2 vCPU, 4GB RAM, 40GB NVMe) — 월 약 $4,
-  Ubuntu 24.04 이미지 선택. (아시아 리전이 필요하면 Vultr/DigitalOcean
-  서울 리전, 또는 네이버클라우드도 대안 — 다만 커뮤니티 검증 사례는
-  Hetzner 쪽이 훨씬 많다.)
+- **현재 추천**: **Vultr** 또는 **DigitalOcean**의 **서울(Seoul) 리전**
+  — 2 vCPU/4GB RAM 플랜, 월 $6 내외, Ubuntu 24.04 이미지. Hetzner의
+  독일 리전보다 KIS/키움 서버와의 지연시간도 유리하다(우리 워크로드엔
+  큰 차이는 아니지만 손해볼 것도 없음).
+- Hetzner의 제한이 풀리면(공식 상태 페이지에서 "Resolved" 확인) 더
+  저렴한 CX22(월 약 $4)로 나중에 옮겨도 된다 — `vps_bootstrap.sh`는
+  Ubuntu/Debian 계열이면 어느 업체든 그대로 동작한다.
 - 우리 워크로드(브라우저 자동화 없이 짧은 파이썬 스크립트만 정기 실행)는
-  가벼운 축이라 최소 스펙(1GB RAM)으로도 충분할 가능성이 높지만, 여유를
-  두려면 CX22 권장.
+  가벼운 축이라 최소 스펙(1GB RAM)으로도 충분할 가능성이 높다.
 
 ### 1. VPS 최초 부트스트랩 (보안 강화 + 필수 패키지 + Hermes 설치)
 
