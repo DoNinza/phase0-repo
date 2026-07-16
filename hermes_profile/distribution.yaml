@@ -1,0 +1,51 @@
+name: phase0-trader
+version: 0.1.0
+description: >
+  Phase 0 KOSPI/ETF GDR(갭 반등) 페이퍼 트레이딩 자동화 — 진입/청산,
+  분봉·일봉·지수 데이터 수집, 대시보드 갱신을 포함한 9개 상시 루틴.
+  No order placement — 실거래 주문은 절대 실행하지 않음(페이퍼 트레이딩 전용).
+hermes_requires: ">=0.12.0"
+author: DoNinza
+
+env_requires:
+  - name: ANTHROPIC_API_KEY
+    description: >
+      Hermes 자체 LLM 백엔드로 Claude(Anthropic)를 쓰는 경우에만 필요.
+      Nous Portal 무료 티어(stepfun/step-3.7-flash:free)를 쓰는 동안은
+      비워둬도 된다.
+    required: false
+  - name: KIS_APP_KEY
+    description: 한국투자증권(KIS) Open API 앱 키. 저장소 자체 .env.example과 동일.
+    required: true
+  - name: KIS_APP_SECRET
+    description: 한국투자증권(KIS) Open API 시크릿.
+    required: true
+  - name: KIS_ACCOUNT_NO
+    description: KIS 계좌번호(8자리).
+    required: true
+  - name: KIS_ACCOUNT_PRODUCT_CD
+    description: KIS 계좌 상품코드(보통 "01").
+    required: true
+  - name: KIS_ENV
+    description: KIS 환경 — "vps"(모의투자) 또는 실전 환경값.
+    required: true
+    default: "vps"
+  - name: KIWOOM_APP_KEY
+    description: 키움증권 REST API 앱 키(데이터 수집용).
+    required: true
+  - name: KIWOOM_APP_SECRET
+    description: 키움증권 REST API 시크릿.
+    required: true
+  - name: KIWOOM_ENV
+    description: 키움 환경 — "mock"(모의) 또는 실전 환경값.
+    required: true
+    default: "mock"
+
+distribution_owned:
+  - README.md
+  - vps_bootstrap.sh
+  - prompts/
+  - data/schedule-presets.yaml
+  - cron/
+  - dashboard_server/
+  - .env.EXAMPLE
