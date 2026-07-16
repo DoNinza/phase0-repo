@@ -1,31 +1,27 @@
 # 대시보드 정적 파일 서버 — systemd 유닛 템플릿.
 #
 # Claude Code의 Artifact 게시 기능은 이 대화 세션에 묶여 있어 VPS
-# 배포에서는 쓸 수 없다. 이 프로젝트는 대시보드를 화려하게 만들 필요가
-# 없다는 원칙(단순함 우선)에 따라, 그냥 dashboard.html이 있는 폴더를
-# 파이썬 내장 http.server로 그대로 서빙한다 — 별도 웹서버(nginx 등) 설치
-# 없이 가장 단순하게 "항상 최신 파일 보여주기"만 해결한다.
+# 배포에서는 쓸 수 없다. 그냥 dashboard.html이 있는 폴더를 파이썬 내장
+# http.server로 서빙한다 — 단, 이번엔 127.0.0.1(localhost)에만 바인딩해
+# 외부에 직접 노출하지 않는다. 실제 외부 접속은 Caddy(같은 폴더의
+# Caddyfile)가 80/443에서 받아 이 포트로만 프록시한다 — HTTPS는 Caddy가
+# 자동으로 처리(vps_bootstrap.sh 참고).
 #
 # 설치:
 #   1. 이 파일의 <REPO_DIR>을 실제 저장소 경로로 바꿔서
 #      /etc/systemd/system/phase0-dashboard.service 로 복사
 #   2. sudo systemctl daemon-reload
 #   3. sudo systemctl enable --now phase0-dashboard
-#   4. http://<VPS 공인 IP>:8080/dashboard.html 로 접속 확인
-#
-# 방화벽에서 8080 포트를 열어야 한다(클라우드 콘솔의 보안그룹/방화벽
-# 규칙 + 필요시 `sudo ufw allow 8080`). HTTPS·도메인·인증이 필요하면
-# nginx reverse proxy를 앞에 두는 걸 나중에 별도로 고려할 것 — 지금은
-# 개인용 읽기 전용 대시보드라 평문 HTTP로 충분하다는 판단.
+#   4. Caddyfile도 설치한 뒤 https://<도메인 또는 IP>/dashboard.html 로 접속 확인
 
 [Unit]
-Description=Phase 0 GDR 페이퍼 트레이딩 대시보드 정적 서버
+Description=Phase 0 GDR 페이퍼 트레이딩 대시보드 정적 서버 (localhost 전용)
 After=network.target
 
 [Service]
 Type=simple
 WorkingDirectory=<REPO_DIR>/data/paper_trading
-ExecStart=/usr/bin/python3 -m http.server 8080
+ExecStart=/usr/bin/python3 -m http.server 8080 --bind 127.0.0.1
 Restart=on-failure
 RestartSec=5
 User=<VPS_USER>

@@ -1,0 +1,21 @@
+# Caddy 리버스 프록시 설정 — phase0-dashboard.service(127.0.0.1:8080)를
+# 80/443으로 노출한다. 도메인이 있으면 Caddy가 Let's Encrypt로 HTTPS를
+# 자동 발급한다(별도 설정 불필요). 도메인이 없고 VPS IP만 쓸 거면 아래
+# "IP만 있을 때" 블록으로 바꿔라 — 이 경우 브라우저가 자체서명 인증서
+# 경고를 띄우는 게 정상이다(개인용 읽기전용 대시보드라 감수 가능한 수준).
+#
+# 설치:
+#   sudo cp hermes_profile/dashboard_server/Caddyfile /etc/caddy/Caddyfile
+#   (도메인 있으면 아래 example.com을 실제 도메인으로 바꾼 뒤)
+#   sudo systemctl reload caddy
+
+# ---- 도메인이 있을 때(권장 — 자동 HTTPS) ----
+example.com {
+    reverse_proxy 127.0.0.1:8080
+}
+
+# ---- 도메인 없이 IP만 쓸 때: 위 블록을 지우고 아래 주석을 해제 ----
+# :443 {
+#     tls internal
+#     reverse_proxy 127.0.0.1:8080
+# }
