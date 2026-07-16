@@ -14,8 +14,17 @@ example.com {
     reverse_proxy 127.0.0.1:8080
 }
 
-# ---- 도메인 없이 IP만 쓸 때: 위 블록을 지우고 아래 주석을 해제 ----
-# :443 {
+# ---- 도메인 없이 IP만 쓸 때: 위 블록을 지우고 아래 두 블록의 주석을
+#      해제한 뒤 <VPS_IP>를 실제 IP로 바꿔라 ----
+# 브라우저는 IP로 접속할 때 SNI(어느 호스트명인지)를 안 보내므로,
+# `default_sni`로 "SNI 없을 때 이 인증서를 써라"를 명시해야
+# "tlsv1 alert internal error"(핸드셰이크 실패)를 피할 수 있다.
+# (참고: caddyserver/caddy#6364, Caddy 커뮤니티 포럼 #23918)
+# {
+#     default_sni <VPS_IP>
+# }
+#
+# <VPS_IP> {
 #     tls internal
 #     reverse_proxy 127.0.0.1:8080
 # }
