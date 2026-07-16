@@ -16,44 +16,44 @@ presets:
   - name: gdr-kr-entry
     schedule: "6 9 * * 1-5"          # 평일 09:06 KST
     prompt_file: prompts/gdr_kr_entry.md
-    deliver: local
+    deliver: telegram
 
   - name: gdr-etf-entry
     schedule: "8 9 * * 1-5"          # 평일 09:08 KST
     prompt_file: prompts/gdr_etf_entry.md
-    deliver: local
+    deliver: telegram
 
   - name: gdr-kr-resolve
     schedule: "37 15 * * 1-5"        # 평일 15:37 KST
     prompt_file: prompts/gdr_kr_resolve.md
-    deliver: local
+    deliver: telegram
 
   - name: gdr-etf-resolve
     schedule: "39 15 * * 1-5"        # 평일 15:39 KST
     prompt_file: prompts/gdr_etf_resolve.md
-    deliver: local
+    deliver: telegram
 
   - name: kiwoom-minute-catchup
     schedule: "41 15 * * 1-5"        # 평일 15:41 KST
     prompt_file: prompts/kiwoom_minute_catchup.md
-    deliver: local
+    deliver: telegram
 
   - name: daily-bars-watchlist
     schedule: "50 15 * * 1-5"        # 평일 15:50 KST
     prompt_file: prompts/daily_bars_watchlist.md
-    deliver: local
+    deliver: telegram
 
   - name: index-bars
     schedule: "54 15 * * 1-5"        # 평일 15:54 KST
     prompt_file: prompts/index_bars.md
-    deliver: local
+    deliver: telegram
 
   - name: dashboard-regen
     schedule: "12,42 9-15 * * 1-5"   # 평일 9~15시, 매시 12·42분
     prompt_file: prompts/dashboard_regen.md
-    deliver: local
+    deliver: telegram
 
   - name: us-minute-bars
     schedule: "13 5 * * 2-6"         # 화~토 05:13 KST (미국 정규장 마감 직후)
     prompt_file: prompts/us_minute_bars.md
-    deliver: local
+    deliver: telegram
