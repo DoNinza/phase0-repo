@@ -1182,6 +1182,26 @@ sonnet에 구현 위임: `scripts/collect_index_bars.py`(일봉 캐시 수집,
 
 253/253 테스트 통과.
 
+## KIS 분봉 수집 크론을 키움으로 완전 대체 — 2026-07-16
+
+실거래일(목요일) 자동매매 크론이 처음으로 대량 실행되면서 KIS API의
+불안정성이 실측으로 드러났다: 아침 시세조회(KR 13/95종목, ETF 12/59종목
+500 에러), 그리고 `scripts/collect_minute_bars.py`(KIS 분봉, 당일치만·
+호출당 30봉)는 20종목 중 최대 9종목이 **3차 재시도까지 계속** 500 에러로
+실패(삼성전자 포함) — 인증정보 문제가 아니라 KIS 서버 자체의 반복적
+불안정. 같은 날 같은 20종목에 대해 `scripts/collect_minute_bars_kiwoom.py`
+(호출당 900봉)는 재수집 20/20 전부 깨끗하게 성공.
+
+사용자 확인 후: **매매(페이퍼 트레이딩의 시세 조회)는 KIS를 그대로
+쓰되, 순수 데이터 수집 중 KIS에 의존하던 것은 키움으로 옮긴다.**
+정리해보니 실제로 KIS를 쓰는 데이터 수집은 `collect_minute_bars.py`
+하나뿐이었다(`collect_daily_bars_watchlist.py`는 pykrx, `collect_index_bars.py`
+는 pykrx 지수API 장애로 어쩔 수 없이 KIS 사용 중이지만 아직 실패 이력
+없음 — 그대로 유지). 평일 15:41 크론을 `collect_minute_bars.py` 대신
+`collect_minute_bars_kiwoom.py --max-calls 3`(캐치업, 중복은 append_bars가
+자동 제외)로 교체했다. 스크립트 파일 자체는 삭제하지 않고 남겨둠(수동
+실행용).
+
 ## 남은 것 (STAGE 7 B·C그룹 — 계좌·API 접근 필요)
 
 - `cluster_bootstrap.py`는 여전히 합성 데이터로만 검증됐다 — 실전 배선은
