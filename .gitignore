@@ -28,3 +28,8 @@ data/index_bars/
 # Phase 1 스파이크 산출물. 소스코드 아님, docs/news_fundamentals_전략_기획안.md §4.3
 data/dart_events/
 data/dart_spike/
+
+# FFD 트랙(외국인 수급) — 투자자별 매매동향 point-in-time 스토어 +
+# Phase 1 스파이크 산출물. 소스코드 아님, docs/foreign_flow_nat_전략_기획안.md §4.3/§8
+data/investor_flow/
+data/investor_flow_spike/
