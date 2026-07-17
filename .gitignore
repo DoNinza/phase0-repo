@@ -23,3 +23,8 @@ data/daily_bars/
 
 # 지수 스트립용 코스피/코스닥/코스피200 일봉 캐시 — 소스코드 아님
 data/index_bars/
+
+# PEAD 트랙(뉴스·펀더멘털) — DART 공시 이벤트 point-in-time 스토어 +
+# Phase 1 스파이크 산출물. 소스코드 아님, docs/news_fundamentals_전략_기획안.md §4.3
+data/dart_events/
+data/dart_spike/
